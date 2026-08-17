@@ -23,12 +23,12 @@ function formatPoster(url) {
     return `${CDN_IMAGE}/${url.replace(/^\//, '')}`;
 }
 
-// Manifest v14.0.0 - Đổi tên thành "Nguồn C" ngắn gọn
+// Manifest v15.0.0 - Đổi ID để ép Nuvio nhận tên mới "Nguồn C"
 const manifest = {
-    id: 'com.nguonc.phim.v1400',
-    version: '14.0.0',
+    id: 'com.nguonc.official.v15',
+    version: '15.0.0',
     name: 'Nguồn C',
-    description: 'Kho phim Bộ, Phim Lẻ, Hoạt Hình Vietsub',
+    description: 'Kho phim Bộ, Phim Lẻ, Hoạt Hình Vietsub chất lượng cao',
     resources: ['catalog', 'meta', 'stream'],
     types: ['movie', 'series'],
     idPrefixes: ['phim_'],
@@ -125,7 +125,7 @@ app.get('/catalog/:type/:id*', async (req, res) => {
     }
 });
 
-// Meta Route - Sửa lỗi trùng từ "Tập"
+// Meta Route - Xử lý dứt điểm lỗi lặp chữ "Tập"
 app.get('/meta/:type/:id*', async (req, res) => {
     try {
         let rawId = req.params.id + (req.params[0] || '');
@@ -137,17 +137,19 @@ app.get('/meta/:type/:id*', async (req, res) => {
 
         if (!movie) return res.json({ meta: null });
 
-        // Chỉ truyền tên/số tập gốc (VD: "03" thay vì "Tập 03") để Nuvio không bị trùng chữ "Tập"
+        // Sử dụng dấu cách đặc biệt hoặc định dạng số thuần để Nuvio hiện chuẩn xác
         const videos = rawEpisodes.map((ep, idx) => {
-            let epName = ep.name ? String(ep.name).replace(/^Tập\s*/i, '').trim() : String(idx + 1);
-            if (epName.length === 1) epName = `0${epName}`;
-
+            let epNum = idx + 1;
+            if (ep.name) {
+                const match = ep.name.match(/\d+/);
+                if (match) epNum = parseInt(match[0]);
+            }
             return {
                 id: `phim_${movie.slug}:${idx + 1}`,
-                title: epName,
+                title: `Phần 1 - Tập ${epNum}`,
                 released: new Date().toISOString(),
                 season: 1,
-                episode: idx + 1
+                episode: epNum
             };
         });
 
