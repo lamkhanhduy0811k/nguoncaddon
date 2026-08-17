@@ -1,6 +1,5 @@
 const express = require('express');
 const cors = require('cors');
-const axios = require('axios');
 
 const app = express();
 
@@ -14,15 +13,6 @@ app.use((req, res, next) => {
 
 const NGUONC_API = 'https://phim.nguonc.com/api';
 
-const axiosClient = axios.create({
-    timeout: 10000,
-    headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-        'Accept': 'application/json, text/plain, */*',
-        'Referer': 'https://phim.nguonc.com/'
-    }
-});
-
 function fixUrl(url) {
     if (!url) return '';
     if (url.startsWith('//')) return 'https:' + url;
@@ -32,8 +22,8 @@ function fixUrl(url) {
 }
 
 const manifest = {
-    id: 'com.nguonc.v4',
-    version: '1.0.7',
+    id: 'com.nguonc.v5',
+    version: '1.0.8',
     name: 'Siêu Tầm Phim (Nguồn C)',
     description: 'Xem phim Vietsub/Thuyết minh từ Nguồn C',
     resources: ['catalog', 'meta', 'stream'],
@@ -53,43 +43,35 @@ const manifest = {
     ]
 };
 
-app.get('/', (req, res) => res.send('NguonC Addon is running!'));
+app.get('/', (req, res) => res.json({ status: 'Online', manifest: '/manifest.json' }));
 app.get('/manifest.json', (req, res) => res.json(manifest));
-
-async function getMetas(type, searchQuery) {
-    let url = `${NGUONC_API}/films/phim-moi-cap-nhat?page=1`;
-    if (searchQuery) {
-        url = `${NGUONC_API}/films/search?keyword=${encodeURIComponent(searchQuery)}`;
-    }
-
-    const response = await axiosClient.get(url);
-    const items = response.data?.items || [];
-
-    return items.map(item => ({
-        id: `nguonc_${item.slug}`,
-        type: type === 'series' ? 'series' : 'movie',
-        name: item.name || 'Phim',
-        poster: fixUrl(item.thumb_url || item.poster_url),
-        posterShape: 'poster',
-        description: item.original_name ? `Tên gốc: ${item.original_name}` : ''
-    }));
-}
 
 // Catalog Route
 app.get('/catalog/:type/:id*', async (req, res) => {
     try {
         const type = req.params.type;
-        let searchQuery = req.query.search || null;
+        const resApi = await fetch(`${NGUONC_API}/films/phim-moi-cap-nhat?page=1`, {
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                'Accept': 'application/json'
+            }
+        });
         
-        if (!searchQuery && req.params[0] && req.params[0].includes('search=')) {
-            const match = req.params[0].match(/search=([^/&.]+)/);
-            if (match) searchQuery = decodeURIComponent(match[1]);
-        }
+        const data = await resApi.json();
+        const items = data?.items || [];
 
-        const metas = await getMetas(type, searchQuery);
+        const metas = items.map(item => ({
+            id: `nguonc_${item.slug}`,
+            type: type === 'series' ? 'series' : 'movie',
+            name: item.name || 'Phim',
+            poster: fixUrl(item.thumb_url || item.poster_url),
+            posterShape: 'poster',
+            description: item.original_name ? `Tên gốc: ${item.original_name}` : ''
+        }));
+
         res.json({ metas });
     } catch (e) {
-        res.json({ metas: [] });
+        res.json({ metas: [], debug_error: e.message });
     }
 });
 
@@ -100,8 +82,9 @@ app.get('/meta/:type/:id*', async (req, res) => {
         rawId = rawId.replace('.json', '');
         const slug = rawId.replace('nguonc_', '');
 
-        const response = await axiosClient.get(`${NGUONC_API}/film/${slug}`);
-        const movie = response.data?.movie;
+        const resApi = await fetch(`${NGUONC_API}/film/${slug}`);
+        const data = await resApi.json();
+        const movie = data?.movie;
 
         if (!movie) return res.json({ meta: null });
 
@@ -132,8 +115,9 @@ app.get('/stream/:type/:id*', async (req, res) => {
         const slug = parts[0];
         const epIndex = parts[1] ? parseInt(parts[1]) - 1 : 0;
 
-        const response = await axiosClient.get(`${NGUONC_API}/film/${slug}`);
-        const movie = response.data?.movie;
+        const resApi = await fetch(`${NGUONC_API}/film/${slug}`);
+        const data = await resApi.json();
+        const movie = data?.movie;
         const episodes = movie?.episodes?.[0]?.items || [];
         const ep = episodes[epIndex] || episodes[0];
 
@@ -153,6 +137,4 @@ app.get('/stream/:type/:id*', async (req, res) => {
     }
 });
 
-// Bắt buộc phải xuất module app cho Vercel
 module.exports = app;
-                                     
