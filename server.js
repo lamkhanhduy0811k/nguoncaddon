@@ -14,8 +14,8 @@ app.use((req, res, next) => {
 
 const API_BASE = 'https://ophim1.com';
 
-// Cổng Proxy thông minh: Xử lý lỗi triệt để, trả về trực tiếp dữ liệu ảnh để Nuvio không bị đen
-app.get('/image-proxy', async (req, res) => {
+// Đổi route kết thúc bằng .jpg để app Nuvio nhận diện đúng định dạng ảnh
+app.get('/image-proxy.jpg', async (req, res) => {
     const imageUrl = req.query.url;
     if (!imageUrl) return res.status(400).send('Missing url');
     try {
@@ -66,7 +66,7 @@ function formatPoster(url, req) {
     const host = req ? req.get('host') : 'nguoncaddon.vercel.app';
     const protocol = req ? req.protocol : 'https';
     
-    return `${protocol}://${host}/image-proxy?url=${encodeURIComponent(cleanUrl)}`;
+    return `${protocol}://${host}/image-proxy.jpg?url=${encodeURIComponent(cleanUrl)}`;
 }
 
 function getBestPoster(item, req) {
@@ -81,9 +81,9 @@ function getBestPoster(item, req) {
 
 const manifest = {
     id: 'vn.ophim.official.v26',
-    version: '26.5.0',
-    name: 'OPhim (Smart Proxy)',
-    description: 'Kho phim OPhim, fix triệt để lỗi màn hình đen ảnh poster',
+    version: '26.6.0',
+    name: 'OPhim (Fixed Extension)',
+    description: 'Kho phim OPhim, fix lỗi hiển thị ảnh poster định dạng .jpg',
     resources: ['catalog', 'meta', 'stream'],
     types: ['movie', 'series'],
     idPrefixes: ['op_'],
@@ -298,4 +298,3 @@ app.get('/stream/:type/:id*', async (req, res) => {
 
 app.listen(process.env.PORT || 3000);
 module.exports = app;
-                                
