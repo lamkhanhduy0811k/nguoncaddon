@@ -21,14 +21,14 @@ function formatPoster(url) {
     }
     const cleanUrl = url.replace(/^\//, '');
     if (cleanUrl.startsWith('uploads/')) {
-        return `https://img.ophim.cc/${cleanUrl}`;
+        return `https://img.ophim1.com/${cleanUrl}`;
     }
-    return `https://img.ophim.cc/uploads/movies/${cleanUrl}`;
+    return `https://img.ophim1.com/uploads/movies/${cleanUrl}`;
 }
 
 const manifest = {
-    id: 'vn.nguonc.official.v23',
-    version: '23.0.0',
+    id: 'vn.nguonc.official.v24',
+    version: '24.0.0',
     name: 'Nguồn C',
     description: 'Kho phim độc quyền đa dạng, chất lượng cao',
     resources: ['catalog', 'meta', 'stream'],
@@ -223,4 +223,3 @@ app.get('/stream/:type/:id*', async (req, res) => {
 });
 
 module.exports = app;
-                                                                                           
