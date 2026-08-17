@@ -25,10 +25,10 @@ function formatPoster(posterUrl, thumbUrl) {
 }
 
 const manifest = {
-    id: 'vn.ophim.official.v40',
-    version: '40.0.0',
+    id: 'vn.ophim.official.v41',
+    version: '41.0.0',
     name: 'Ổ Phim',
-    description: 'Kho phim Ổ Phim đa server, tối ưu hóa toàn diện luồng phát và tìm kiếm',
+    description: 'Kho phim Ổ Phim tối ưu đa server và xử lý chống mất nguồn phát',
     resources: ['catalog', 'meta', 'stream'],
     types: ['movie', 'series'],
     idPrefixes: ['op_'],
@@ -88,12 +88,12 @@ async function getOPhimSlugAndData(type, rawId) {
         slug = cleanId.replace('op_', '').split(':')[0];
     } else {
         try {
-            const cinemetaRes = await axios.get(`https://v3-cinemeta.strem.io/meta/${type}/${cleanId}.json`, { timeout: 4000 });
+            const cinemetaRes = await axios.get(`https://v3-cinemeta.strem.io/meta/${type}/${cleanId}.json`, { timeout: 3000 });
             const meta = cinemetaRes.data?.meta;
             if (meta) {
                 let keywords = [meta.name, meta.original_name].filter(Boolean);
                 for (const kw of keywords) {
-                    const searchRes = await axios.get(`${API_BASE}/v1/api/tim-kiem?keyword=${encodeURIComponent(kw)}&limit=5`, { timeout: 4000 });
+                    const searchRes = await axios.get(`${API_BASE}/v1/api/tim-kiem?keyword=${encodeURIComponent(kw)}&limit=3`, { timeout: 3000 });
                     const items = searchRes.data?.data?.items || [];
                     if (items.length > 0) {
                         slug = items[0].slug;
@@ -109,14 +109,14 @@ async function getOPhimSlugAndData(type, rawId) {
     }
 
     try {
-        let apiRes = await axios.get(`${API_BASE}/phim/${slug}`, { timeout: 5000 });
+        let apiRes = await axios.get(`${API_BASE}/phim/${slug}`, { timeout: 4000 });
         if (!apiRes.data?.movie) {
             const searchKeyword = slug.replace(/-/g, ' ');
-            const searchRes = await axios.get(`${API_BASE}/v1/api/tim-kiem?keyword=${encodeURIComponent(searchKeyword)}&limit=5`, { timeout: 4000 });
+            const searchRes = await axios.get(`${API_BASE}/v1/api/tim-kiem?keyword=${encodeURIComponent(searchKeyword)}&limit=3`, { timeout: 4000 });
             const items = searchRes.data?.data?.items || [];
             if (items.length > 0) {
                 slug = items[0].slug;
-                apiRes = await axios.get(`${API_BASE}/phim/${slug}`, { timeout: 5000 });
+                apiRes = await axios.get(`${API_BASE}/phim/${slug}`, { timeout: 4000 });
             }
         }
         return { slug, data: apiRes.data };
@@ -134,7 +134,7 @@ app.get('/catalog/:type/:id*', async (req, res) => {
         const keyword = queryMatch ? decodeURIComponent(queryMatch[1]) : '';
 
         try {
-            const apiRes = await axios.get(`${API_BASE}/v1/api/tim-kiem?keyword=${encodeURIComponent(keyword)}&limit=200`, { timeout: 5000 });
+            const apiRes = await axios.get(`${API_BASE}/v1/api/tim-kiem?keyword=${encodeURIComponent(keyword)}&limit=150`, { timeout: 5000 });
             let items = apiRes.data?.data?.items || [];
 
             const metas = items.map(item => ({
@@ -271,7 +271,7 @@ app.get('/stream/:type/:id*', async (req, res) => {
                 }
                 if (targetEp.link_embed) {
                     streams.push({
-                        title: `Ổ Phim - ${serverName} (Embed/Web)`,
+                        title: `Ổ Phim - ${serverName} (Embed)`,
                         url: targetEp.link_embed
                     });
                 }
@@ -286,4 +286,4 @@ app.get('/stream/:type/:id*', async (req, res) => {
 
 app.listen(process.env.PORT || 3000);
 module.exports = app;
-        
+                    
