@@ -25,10 +25,10 @@ function formatPoster(posterUrl, thumbUrl, prefix = 'https://img.ophim.live/uplo
 }
 
 const manifest = {
-    id: 'vn.ophim.phimapi.v46',
-    version: '46.0.0',
+    id: 'vn.ophim.phimapi.v47',
+    version: '47.0.0',
     name: 'Ổ Phim',
-    description: 'Ổ Phim lọc tuyệt đối, ẩn hoàn toàn phim không có nguồn',
+    description: 'Ổ Phim lọc nghiêm ngặt, loại bỏ hoàn toàn phim rác không có nguồn',
     resources: ['catalog', 'meta', 'stream'],
     types: ['movie', 'series'],
     idPrefixes: ['op_'],
@@ -80,33 +80,9 @@ async function fetchMultiplePages(typePath, maxPages = 15) {
     return allItems;
 }
 
-async function resolveSlug(type, rawId) {
+async function resolveSlug(rawId) {
     let cleanId = rawId.replace('.json', '');
     let slug = cleanId.startsWith('op_') ? cleanId.replace('op_', '').split(':')[0] : '';
-
-    if (!slug) {
-        try {
-            const cinemetaRes = await axios.get(`https://v3-cinemeta.strem.io/meta/${type}/${cleanId}.json`, { timeout: 3000 });
-            const meta = cinemetaRes.data?.meta;
-            if (meta) {
-                let keywords = [meta.name, meta.original_name].filter(Boolean);
-                for (const kw of keywords) {
-                    const [ophimSearch, phimapiSearch] = await Promise.allSettled([
-                        axios.get(`${OPHIM_API}/v1/api/tim-kiem?keyword=${encodeURIComponent(kw)}&limit=3`, { timeout: 3000 }),
-                        axios.get(`${PHIMAPI_API}/v1/api/tim-kiem?keyword=${encodeURIComponent(kw)}&limit=3`, { timeout: 3000 })
-                    ]);
-
-                    if (ophimSearch.status === 'fulfilled' && ophimSearch.value.data?.data?.items?.length > 0) {
-                        return ophimSearch.value.data.data.items[0].slug;
-                    }
-                    if (phimapiSearch.status === 'fulfilled' && phimapiSearch.value.data?.data?.items?.length > 0) {
-                        return phimapiSearch.value.data.data.items[0].slug;
-                    }
-                }
-            }
-        } catch (err) {}
-        slug = cleanId.split(':')[0];
-    }
     return slug;
 }
 
@@ -196,7 +172,9 @@ app.get('/catalog/:type/:id*', async (req, res) => {
 app.get('/meta/:type/:id*', async (req, res) => {
     try {
         let rawId = req.params.id + (req.params[0] || '');
-        const slug = await resolveSlug(req.params.type, rawId);
+        const slug = await resolveSlug(rawId);
+
+        if (!slug) return res.json({ meta: null });
 
         let movie = null;
         let episodesList = [];
@@ -221,7 +199,6 @@ app.get('/meta/:type/:id*', async (req, res) => {
             } catch(e) {}
         }
 
-        // Chặn tuyệt đối nếu không tìm thấy phim trên cả 2 server nguồn
         if (!movie) return res.json({ meta: null });
 
         let rawEpisodes = [];
@@ -231,7 +208,6 @@ app.get('/meta/:type/:id*', async (req, res) => {
             }
         }
 
-        // Chặn tuyệt đối nếu phim có tồn tại nhưng danh sách tập/server trống
         if (rawEpisodes.length === 0) return res.json({ meta: null });
 
         const moviePoster = formatPoster(movie.poster_url, movie.thumb_url, imagePrefix);
@@ -276,7 +252,7 @@ app.get('/stream/:type/:id*', async (req, res) => {
         const baseId = parts[0];
         const epIndex = parts[1] ? parseInt(parts[1]) - 1 : 0;
 
-        const slug = await resolveSlug(req.params.type, baseId);
+        const slug = await resolveSlug(baseId);
         const streams = [];
 
         const fetchStreams = async (apiBase, sourceName) => {
@@ -320,4 +296,4 @@ app.get('/stream/:type/:id*', async (req, res) => {
 
 app.listen(process.env.PORT || 3000);
 module.exports = app;
-                    
+                                 
