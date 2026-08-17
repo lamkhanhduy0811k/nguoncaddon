@@ -23,12 +23,12 @@ function formatPoster(url) {
     return `${CDN_IMAGE}/${url.replace(/^\//, '')}`;
 }
 
-// Đổi ID mới để ép Nuvio nhận ngay phiên bản 10.0.0
+// Manifest v11.0.0 - Tích hợp Tìm kiếm (search)
 const manifest = {
-    id: 'com.nguonc.phim.v1000',
-    version: '10.0.0',
-    name: 'Nguồn C Phim (v10)',
-    description: 'Phim Bộ, Phim Lẻ, Hoạt Hình phân loại chuẩn 100%',
+    id: 'com.nguonc.phim.v1100',
+    version: '11.0.0',
+    name: 'Nguồn C Phim',
+    description: 'Phim Bộ, Phim Lẻ, Hoạt Hình & Tìm Kiếm Tối Ưu',
     resources: ['catalog', 'meta', 'stream'],
     types: ['movie', 'series'],
     idPrefixes: ['phim_'],
@@ -36,17 +36,20 @@ const manifest = {
         {
             type: 'series',
             id: 'phim_bo',
-            name: 'Nguồn C - Phim Bộ'
+            name: 'Nguồn C - Phim Bộ',
+            extra: [{ name: 'search', isRequired: false }]
         },
         {
             type: 'movie',
             id: 'phim_le',
-            name: 'Nguồn C - Phim Lẻ'
+            name: 'Nguồn C - Phim Lẻ',
+            extra: [{ name: 'search', isRequired: false }]
         },
         {
             type: 'series',
             id: 'hoat_hinh',
-            name: 'Nguồn C - Hoạt Hình'
+            name: 'Nguồn C - Hoạt Hình',
+            extra: [{ name: 'search', isRequired: false }]
         }
     ]
 };
@@ -54,36 +57,69 @@ const manifest = {
 app.get('/', (req, res) => res.json(manifest));
 app.get('/manifest.json', (req, res) => res.json(manifest));
 
-// Catalog Route - Lọc đúng phim cho từng mục
+// Catalog Route (Tải nhiều phim + Xử lý Tìm kiếm tập trung vào 1 mục)
 app.get('/catalog/:type/:id*', async (req, res) => {
     let rawId = req.params.id + (req.params[0] || '');
     rawId = rawId.replace('.json', '');
 
-    let typePath = 'phim-bo';
-    if (rawId === 'phim_le') {
-        typePath = 'phim-le';
-    } else if (rawId === 'hoat_hinh') {
-        typePath = 'hoat-hinh';
-    }
+    // Xử lý khi người dùng TÌM KIẾM
+    if (rawId.includes('search=')) {
+        const queryMatch = rawId.match(/search=([^&]+)/);
+        const keyword = queryMatch ? decodeURIComponent(queryMatch[1]) : '';
 
-    try {
-        const apiRes = await axios.get(`${API_BASE}/v1/api/danh-sach/${typePath}?page=1`, { timeout: 4000 });
-        const items = apiRes.data?.data?.items || apiRes.data?.items || [];
+        // Chỉ hiển thị kết quả ở mục Phim Bộ để gom gọn thành 1 mục duy nhất
+        if (req.params.id !== 'phim_bo') {
+            return res.json({ metas: [] });
+        }
 
-        const metas = items.map(item => {
-            const year = item.year || '2026';
-            const ep = item.episode_current || item.episode || 'Full';
+        try {
+            const apiRes = await axios.get(`${API_BASE}/v1/api/tim-kiem?keyword=${encodeURIComponent(keyword)}&limit=40`, { timeout: 4000 });
+            const items = apiRes.data?.data?.items || [];
 
-            return {
+            const metas = items.map(item => ({
                 id: `phim_${item.slug}`,
                 type: req.params.type,
                 name: item.name || item.title,
                 poster: formatPoster(item.poster_url || item.thumb_url),
                 posterShape: 'poster',
-                releaseInfo: `${year} • ${ep}`,
                 description: item.origin_name ? `Tên gốc: ${item.origin_name}` : ''
-            };
+            }));
+
+            return res.json({ metas });
+        } catch (e) {
+            return res.json({ metas: [] });
+        }
+    }
+
+    // Xử lý danh mục BÌNH THƯỜNG (Tải dữ liệu nhiều trang để có kho phim lớn)
+    let typePath = 'phim-bo';
+    if (rawId.startsWith('phim_le')) {
+        typePath = 'phim-le';
+    } else if (rawId.startsWith('hoat_hinh')) {
+        typePath = 'hoat-hinh';
+    }
+
+    try {
+        // Tải đồng thời 3 trang đầu tiên để tăng số lượng phim hiển thị
+        const pages = [1, 2, 3];
+        const requests = pages.map(p => axios.get(`${API_BASE}/v1/api/danh-sach/${typePath}?page=${p}`, { timeout: 4000 }).catch(() => null));
+        const responses = await Promise.all(requests);
+
+        let allItems = [];
+        responses.forEach(r => {
+            if (r?.data?.data?.items) {
+                allItems = allItems.concat(r.data.data.items);
+            }
         });
+
+        const metas = allItems.map(item => ({
+            id: `phim_${item.slug}`,
+            type: req.params.type,
+            name: item.name || item.title,
+            poster: formatPoster(item.poster_url || item.thumb_url),
+            posterShape: 'poster',
+            description: item.origin_name ? `Tên gốc: ${item.origin_name}` : ''
+        }));
 
         return res.json({ metas });
     } catch (e) {
@@ -91,7 +127,7 @@ app.get('/catalog/:type/:id*', async (req, res) => {
     }
 });
 
-// Meta Route
+// Meta Route (Trang chi tiết phim - Giữ đầy đủ thông tin tập khi bấm vào xem)
 app.get('/meta/:type/:id*', async (req, res) => {
     try {
         let rawId = req.params.id + (req.params[0] || '');
@@ -140,3 +176,4 @@ app.get('/stream/:type/:id*', async (req, res) => {
 });
 
 module.exports = app;
+            
