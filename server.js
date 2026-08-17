@@ -12,7 +12,6 @@ app.use((req, res, next) => {
     next();
 });
 
-// Chuyển sang API gốc của Nguồn C (nguonc.cc)
 const API_BASE = 'https://nguonc.cc/api';
 
 function formatPoster(url) {
@@ -20,10 +19,9 @@ function formatPoster(url) {
     return url;
 }
 
-// Manifest v19.0.0 - Nguồn C chuẩn xác
 const manifest = {
-    id: 'vn.nguonc.official.v19',
-    version: '19.0.0',
+    id: 'vn.nguonc.official.v20',
+    version: '20.0.0',
     name: 'Nguồn C',
     description: 'Kho phim độc quyền từ Nguồn C (nguonc.cc)',
     resources: ['catalog', 'meta', 'stream'],
@@ -41,12 +39,6 @@ const manifest = {
             id: 'phim_le',
             name: 'Nguồn C - Phim Lẻ',
             extra: [{ name: 'search', isRequired: false }]
-        },
-        {
-            type: 'series',
-            id: 'hoat_hinh',
-            name: 'Nguồn C - Hoạt Hình',
-            extra: [{ name: 'search', isRequired: false }]
         }
     ]
 };
@@ -54,7 +46,6 @@ const manifest = {
 app.get('/', (req, res) => res.json(manifest));
 app.get('/manifest.json', (req, res) => res.json(manifest));
 
-// Catalog Route - Lấy từ nguonc.cc
 app.get('/catalog/:type/:id*', async (req, res) => {
     let rawId = req.params.id + (req.params[0] || '');
     rawId = rawId.replace('.json', '');
@@ -66,7 +57,6 @@ app.get('/catalog/:type/:id*', async (req, res) => {
         try {
             const apiRes = await axios.get(`${API_BASE}/films/search?keyword=${encodeURIComponent(keyword)}`, { timeout: 4000 });
             const items = apiRes.data?.items || apiRes.data?.data?.items || [];
-
             const metas = items.map(item => ({
                 id: `nc_${item.slug}`,
                 type: req.params.type,
@@ -76,7 +66,6 @@ app.get('/catalog/:type/:id*', async (req, res) => {
                 releaseInfo: `${item.year || '2026'} • ${item.current_episode || item.episode_current || 'Full'}`,
                 description: item.original_name ? `Tên gốc: ${item.original_name}` : ''
             }));
-
             return res.json({ metas });
         } catch (e) {
             return res.json({ metas: [] });
@@ -86,14 +75,11 @@ app.get('/catalog/:type/:id*', async (req, res) => {
     let typePath = 'phim-bo';
     if (rawId.startsWith('phim_le')) {
         typePath = 'phim-le';
-    } else if (rawId.startsWith('hoat_hinh')) {
-        typePath = 'hoat-hinh';
     }
 
     try {
         const apiRes = await axios.get(`${API_BASE}/films/${typePath}`, { timeout: 4000 });
         const items = apiRes.data?.items || apiRes.data?.data?.items || [];
-
         const metas = items.map(item => ({
             id: `nc_${item.slug}`,
             type: req.params.type,
@@ -103,14 +89,12 @@ app.get('/catalog/:type/:id*', async (req, res) => {
             releaseInfo: `${item.year || '2026'} • ${item.current_episode || item.episode_current || 'Full'}`,
             description: item.original_name ? `Tên gốc: ${item.original_name}` : ''
         }));
-
         return res.json({ metas });
     } catch (e) {
         return res.json({ metas: [] });
     }
 });
 
-// Meta Route - Chi tiết phim từ nguonc.cc
 app.get('/meta/:type/:id*', async (req, res) => {
     try {
         let rawId = req.params.id + (req.params[0] || '');
@@ -124,14 +108,12 @@ app.get('/meta/:type/:id*', async (req, res) => {
         if (!movie) return res.json({ meta: null });
 
         const movieThumb = formatPoster(movie.thumb_url || movie.poster_url);
-
         const videos = rawEpisodes.map((ep, idx) => {
             let epNum = idx + 1;
             let epTitle = ep.name ? String(ep.name).trim() : `Tập ${epNum}`;
             if (!/^tập/i.test(epTitle)) {
                 epTitle = `Tập ${epTitle}`;
             }
-
             return {
                 id: `nc_${slug}:${idx + 1}`,
                 title: epTitle,
@@ -160,7 +142,6 @@ app.get('/meta/:type/:id*', async (req, res) => {
     }
 });
 
-// Stream Route - Lấy link từ nguonc.cc
 app.get('/stream/:type/:id*', async (req, res) => {
     try {
         let rawId = req.params.id + (req.params[0] || '');
@@ -176,12 +157,10 @@ app.get('/stream/:type/:id*', async (req, res) => {
         const rawEpisodes = episodesList[0]?.items || episodesList[0]?.server_data || [];
 
         const targetEp = rawEpisodes[epIndex] || rawEpisodes[0];
-
-        if (!targetEp || (!targetEp.link && !targetEp.m3u8 && !targetEp.link_m3u8)) {
-            return res.json({ streams: [] });
-        }
+        if (!targetEp) return res.json({ streams: [] });
 
         const streamUrl = targetEp.link || targetEp.link_m3u8 || targetEp.m3u8;
+        if (!streamUrl) return res.json({ streams: [] });
 
         return res.json({
             streams: [
@@ -197,4 +176,3 @@ app.get('/stream/:type/:id*', async (req, res) => {
 });
 
 module.exports = app;
-        
