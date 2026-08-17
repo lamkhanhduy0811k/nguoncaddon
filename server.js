@@ -31,10 +31,9 @@ function fixUrl(url) {
     return url;
 }
 
-// Đổi ID mới ép Nuvio xóa toàn bộ cache cũ
 const manifest = {
-    id: 'com.nguonc.v3',
-    version: '1.0.6',
+    id: 'com.nguonc.v4',
+    version: '1.0.7',
     name: 'Siêu Tầm Phim (Nguồn C)',
     description: 'Xem phim Vietsub/Thuyết minh từ Nguồn C',
     resources: ['catalog', 'meta', 'stream'],
@@ -54,17 +53,8 @@ const manifest = {
     ]
 };
 
+app.get('/', (req, res) => res.send('NguonC Addon is running!'));
 app.get('/manifest.json', (req, res) => res.json(manifest));
-
-// Link kiểm tra trực tiếp kết nối Nguồn C
-app.get('/test', async (req, res) => {
-    try {
-        const response = await axiosClient.get(`${NGUONC_API}/films/phim-moi-cap-nhat?page=1`);
-        res.json({ status: 'OK', count: response.data?.items?.length || 0, sample: response.data?.items?.[0] });
-    } catch (e) {
-        res.status(500).json({ status: 'ERROR', message: e.message });
-    }
-});
 
 async function getMetas(type, searchQuery) {
     let url = `${NGUONC_API}/films/phim-moi-cap-nhat?page=1`;
@@ -85,7 +75,7 @@ async function getMetas(type, searchQuery) {
     }));
 }
 
-// Route Catalog bắt mọi định dạng URL từ Nuvio
+// Catalog Route
 app.get('/catalog/:type/:id*', async (req, res) => {
     try {
         const type = req.params.type;
@@ -163,6 +153,6 @@ app.get('/stream/:type/:id*', async (req, res) => {
     }
 });
 
-const PORT = process.env.PORT || 10000;
-app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
-            
+// Bắt buộc phải xuất module app cho Vercel
+module.exports = app;
+                                     
