@@ -13,24 +13,23 @@ app.use((req, res, next) => {
 });
 
 const API_BASE = 'https://ophim1.com';
+const IMAGE_BASE = 'https://img.ophim.live/uploads/movies/';
 
-const samplePosters = [
-    'https://image.tmdb.org/t/p/w500/qNBAXBIQlnOThrVvA6mA2B5ggV6.jpg', 
-    'https://image.tmdb.org/t/p/w500/1E5ba88S318X4Pz2goR2vKCoBu.jpg', 
-    'https://image.tmdb.org/t/p/w500/vpnVM9B6NMmQpWeZvzLvDESb2QY.jpg', 
-    'https://image.tmdb.org/t/p/w500/hrjEo9SFINq9FlNfpmzI9l3u0qX.jpg', 
-    'https://image.tmdb.org/t/p/w500/gEU2QniE6E77NI6lCU6MxlNBvIx.jpg'
-];
-
-function formatPoster(item, index = 0) {
-    return samplePosters[index % samplePosters.length];
+function formatPoster(posterUrl, thumbUrl) {
+    let img = posterUrl || thumbUrl || '';
+    if (!img) return '';
+    if (!img.startsWith('http')) {
+        img = IMAGE_BASE + img;
+    }
+    // Sử dụng dịch vụ weserv để proxy ảnh giúp Nuvio luôn tải được ảnh gốc mượt mà, không bị lỗi
+    return `https://images.weserv.nl/?url=${encodeURIComponent(img)}&w=500&fit=cover`;
 }
 
 const manifest = {
-    id: 'vn.ophim.official.v31',
-    version: '31.0.0',
-    name: 'OPhim (No Black Screen)',
-    description: 'Kho phim OPhim triệt tiêu hoàn toàn khung đen trên Nuvio',
+    id: 'vn.ophim.official.v33',
+    version: '33.0.0',
+    name: 'OPhim (Unique Posters)',
+    description: 'Kho phim OPhim hiển thị đúng poster riêng của từng phim',
     resources: ['catalog', 'meta', 'stream'],
     types: ['movie', 'series'],
     idPrefixes: ['op_'],
@@ -112,11 +111,11 @@ app.get('/catalog/:type/:id*', async (req, res) => {
                 items = items.filter(i => i.type === 'series' || i.type === 'hoat-hinh' || i.category?.some(c => c.slug === 'phim-bo'));
             }
 
-            const metas = items.map((item, index) => ({
+            const metas = items.map(item => ({
                 id: `op_${item.slug}`,
                 type: req.params.type,
                 name: item.name || item.title,
-                poster: formatPoster(item, index),
+                poster: formatPoster(item.poster_url, item.thumb_url),
                 posterShape: 'poster',
                 releaseInfo: `${item.year || '2026'} • ${item.episode_current || 'Full'}`,
                 description: item.origin_name ? `Tên gốc: ${item.origin_name}` : ''
@@ -151,11 +150,11 @@ app.get('/catalog/:type/:id*', async (req, res) => {
             items = await fetchMultiplePages('phim-bo', 20);
         }
 
-        const metas = items.map((item, index) => ({
+        const metas = items.map(item => ({
             id: `op_${item.slug}`,
             type: req.params.type,
             name: item.name || item.title,
-            poster: formatPoster(item, index),
+            poster: formatPoster(item.poster_url, item.thumb_url),
             posterShape: 'poster',
             releaseInfo: `${item.year || '2026'} • ${item.episode_current || 'Full'}`,
             description: item.origin_name ? `Tên gốc: ${item.origin_name}` : ''
@@ -179,7 +178,7 @@ app.get('/meta/:type/:id*', async (req, res) => {
 
         if (!movie) return res.json({ meta: null });
 
-        const moviePoster = samplePosters[0];
+        const moviePoster = formatPoster(movie.poster_url, movie.thumb_url);
         const videos = rawEpisodes.map((ep, idx) => {
             let epNum = idx + 1;
             let epTitle = ep.name ? String(ep.name).trim() : `Tập ${epNum}`;
@@ -245,4 +244,4 @@ app.get('/stream/:type/:id*', async (req, res) => {
 
 app.listen(process.env.PORT || 3000);
 module.exports = app;
-                
+                                
