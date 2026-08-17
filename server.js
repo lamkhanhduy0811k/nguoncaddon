@@ -7,10 +7,10 @@ app.use(cors());
 
 const NGUONC_API = 'https://phim.nguonc.com/api';
 
-// 1. Khai báo Manifest cho Stremio
+// 1. Khai báo Manifest chuẩn Stremio
 const manifest = {
     id: 'com.sieutamphim.nguonc',
-    version: '1.0.0',
+    version: '1.0.1',
     name: 'Siêu Tầm Phim (Nguồn C)',
     description: 'Xem phim Vietsub/Thuyết minh từ Nguồn C trên Stremio',
     resources: ['catalog', 'meta', 'stream'],
@@ -18,8 +18,14 @@ const manifest = {
     catalogs: [
         {
             type: 'movie',
-            id: 'nguonc_catalog',
+            id: 'nguonc_movie_catalog',
             name: 'Nguồn C - Phim Mới',
+            extra: [{ name: 'search', isRequired: false }]
+        },
+        {
+            type: 'series',
+            id: 'nguonc_series_catalog',
+            name: 'Nguồn C - Phim Bộ',
             extra: [{ name: 'search', isRequired: false }]
         }
     ]
@@ -29,28 +35,41 @@ app.get('/manifest.json', (req, res) => {
     res.json(manifest);
 });
 
-// 2. Lấy danh sách phim & Tìm kiếm
-app.get('/catalog/:type/:id/:extra?.json', async (req, res) => {
-    try {
-        let url = `${NGUONC_API}/films/phim-moi-cap-nhat?page=1`;
-        if (req.params.extra) {
-            const searchMatch = req.params.extra.match(/search=([^&]+)/);
-            if (searchMatch) {
-                url = `${NGUONC_API}/films/search?keyword=${encodeURIComponent(searchMatch[1])}`;
-            }
+// Hàm lấy danh sách phim
+async function getCatalogMetas(type, extraStr) {
+    let url = `${NGUONC_API}/films/phim-moi-cap-nhat?page=1`;
+    if (extraStr) {
+        const searchMatch = extraStr.match(/search=([^&]+)/);
+        if (searchMatch) {
+            url = `${NGUONC_API}/films/search?keyword=${encodeURIComponent(searchMatch[1])}`;
         }
+    }
 
-        const response = await axios.get(url);
-        const items = response.data.items || [];
+    const response = await axios.get(url, { timeout: 8000 });
+    const items = response.data.items || [];
 
-        const metas = items.map(item => ({
-            id: `nguonc_${item.slug}`,
-            type: item.type === 'single' ? 'movie' : 'series',
-            name: item.name,
-            poster: item.thumb_url || item.poster_url,
-            description: `Tên gốc: ${item.original_name || ''} (${item.year || ''})`
-        }));
+    return items.map(item => ({
+        id: `nguonc_${item.slug}`,
+        type: type,
+        name: item.name,
+        poster: item.thumb_url || item.poster_url,
+        description: `Tên gốc: ${item.original_name || ''}`
+    }));
+}
 
+// 2. Lấy danh sách phim & Tìm kiếm (Chia 2 đường dẫn để tránh lỗi Route)
+app.get('/catalog/:type/:id.json', async (req, res) => {
+    try {
+        const metas = await getCatalogMetas(req.params.type, null);
+        res.json({ metas });
+    } catch (e) {
+        res.json({ metas: [] });
+    }
+});
+
+app.get('/catalog/:type/:id/:extra.json', async (req, res) => {
+    try {
+        const metas = await getCatalogMetas(req.params.type, req.params.extra);
         res.json({ metas });
     } catch (e) {
         res.json({ metas: [] });
@@ -61,18 +80,20 @@ app.get('/catalog/:type/:id/:extra?.json', async (req, res) => {
 app.get('/meta/:type/:id.json', async (req, res) => {
     try {
         const slug = req.params.id.replace('nguonc_', '');
-        const response = await axios.get(`${NGUONC_API}/film/${slug}`);
+        const response = await axios.get(`${NGUONC_API}/film/${slug}`, { timeout: 8000 });
         const movie = response.data.movie;
+
+        if (!movie) return res.json({ meta: null });
 
         res.json({
             meta: {
                 id: req.params.id,
-                type: movie.type === 'single' ? 'movie' : 'series',
+                type: req.params.type,
                 name: movie.name,
                 poster: movie.thumb_url || movie.poster_url,
                 background: movie.poster_url || movie.thumb_url,
                 description: movie.description ? movie.description.replace(/<[^>]*>?/gm, '') : '',
-                year: movie.year
+                year: movie.year || ''
             }
         });
     } catch (e) {
@@ -80,14 +101,14 @@ app.get('/meta/:type/:id.json', async (req, res) => {
     }
 });
 
-// 4. Bóc tách link Stream (m3u8) để phát video
+// 4. Bóc tách link Stream (m3u8)
 app.get('/stream/:type/:id.json', async (req, res) => {
     try {
         const parts = req.params.id.replace('nguonc_', '').split(':');
         const slug = parts[0];
         const epIndex = parts[1] ? parseInt(parts[1]) - 1 : 0;
 
-        const response = await axios.get(`${NGUONC_API}/film/${slug}`);
+        const response = await axios.get(`${NGUONC_API}/film/${slug}`, { timeout: 8000 });
         const episodes = response.data.movie?.episodes?.[0]?.items || [];
         const ep = episodes[epIndex] || episodes[0];
 
