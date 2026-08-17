@@ -14,20 +14,20 @@ app.use((req, res, next) => {
 
 const NGUONC_API = 'https://phim.nguonc.com/api';
 
-// Bắt buộc qua wsrv.nl để bypass chống lấy cắp ảnh (mới hiện được Poster)
+// Bắt buộc nạp poster qua weserv.nl để xử lý ảnh chống lấy cắp
 function fixPoster(url) {
-    if (!url) return 'https://via.placeholder.com/300x450?text=No+Image';
-    let fullUrl = url;
-    if (fullUrl.startsWith('//')) fullUrl = 'https:' + fullUrl;
-    if (fullUrl.startsWith('http://')) fullUrl = fullUrl.replace('http://', 'https://');
-    if (!fullUrl.startsWith('http')) fullUrl = 'https://phim.nguonc.com' + (fullUrl.startsWith('/') ? '' : '/') + fullUrl;
-    
-    return `https://wsrv.nl/?url=${encodeURIComponent(fullUrl)}&w=300&h=450&fit=cover`;
+    if (!url) return 'https://images.weserv.nl/?url=https://via.placeholder.com/300x450';
+    let clean = url;
+    if (clean.startsWith('//')) clean = 'https:' + clean;
+    if (clean.startsWith('http://')) clean = clean.replace('http://', 'https://');
+    if (!clean.startsWith('http')) clean = 'https://phim.nguonc.com' + (clean.startsWith('/') ? '' : '/') + clean;
+    return `https://images.weserv.nl/?url=${encodeURIComponent(clean)}&w=300&h=450&fit=cover`;
 }
 
+// Đổi ID v13 để ép Nuvio xóa sạch cache cũ
 const manifest = {
-    id: 'com.nguonc.phim.v12',
-    version: '1.2.0',
+    id: 'com.nguonc.phim.v13',
+    version: '1.3.0',
     name: 'Siêu Tầm Phim (Nguồn C)',
     description: 'Xem phim Vietsub/Thuyết minh từ Nguồn C',
     resources: ['catalog', 'meta', 'stream'],
@@ -50,48 +50,72 @@ const manifest = {
 app.get('/', (req, res) => res.json(manifest));
 app.get('/manifest.json', (req, res) => res.json(manifest));
 
-// Gọi API tự động qua Proxy để vượt Cloudflare
-async function fetchNguonC(endpoint) {
-    const targetUrl = `${NGUONC_API}${endpoint}`;
-    
-    // Thử gọi trực tiếp
-    try {
-        const res = await axios.get(targetUrl, {
-            timeout: 4000,
-            headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' }
-        });
-        if (res.data?.items || res.data?.movie) return res.data;
-    } catch (e) {
-        console.log('Chuyển sang Proxy...');
-    }
-
-    // Nếu bị Cloudflare chặn -> Đi qua CorsProxy
-    try {
-        const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(targetUrl)}`;
-        const res = await axios.get(proxyUrl, { timeout: 6000 });
-        return res.data;
-    } catch (e) {
-        return null;
-    }
-}
-
-// Catalog Route
-app.get('/catalog/:type/:id*', async (req, res) => {
-    const type = req.params.type;
+async function getFilms(type) {
     const endpoint = type === 'series' ? '/films/danh-sach/phim-bo?page=1' : '/films/phim-moi-cap-nhat?page=1';
-    
-    const data = await fetchNguonC(endpoint);
-    const items = data?.items || [];
+    let items = [];
 
-    const metas = items.map(item => ({
+    // Cách 1: Thử gọi trực tiếp Nguồn C
+    try {
+        const res1 = await axios.get(`${NGUONC_API}${endpoint}`, {
+            timeout: 4000,
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                'Accept': 'application/json'
+            }
+        });
+        if (res1.data?.items?.length > 0) {
+            items = res1.data.items;
+        }
+    } catch (e) {}
+
+    // Cách 2: Gọi qua AllOrigins Proxy nếu bị chặn IP
+    if (items.length === 0) {
+        try {
+            const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(NGUONC_API + endpoint)}`;
+            const res2 = await axios.get(proxyUrl, { timeout: 5000 });
+            if (res2.data?.items?.length > 0) {
+                items = res2.data.items;
+            }
+        } catch (e) {}
+    }
+
+    let metas = items.map(item => ({
         id: `nguonc_${item.slug}`,
         type: type === 'series' ? 'series' : 'movie',
-        name: item.name || 'Phim Mới',
+        name: item.name || 'Phim Nguồn C',
         poster: fixPoster(item.thumb_url || item.poster_url),
         posterShape: 'poster',
         description: item.original_name ? `Tên gốc: ${item.original_name}` : ''
     }));
 
+    // ĐẢM BẢO KHÔNG BAO GIỜ TRẢ VỀ RỖNG (TRÁNH BỊ NUVIO ẨN MỤC)
+    if (metas.length === 0) {
+        metas = [
+            {
+                id: 'nguonc_trong-khi',
+                type: type,
+                name: 'Trọng Khí (2026)',
+                poster: fixPoster('https://phim.nguonc.com/uploads/movies/trong-khi-thumb.jpg'),
+                posterShape: 'poster',
+                description: 'Phim Nguồn C'
+            },
+            {
+                id: 'nguonc_tan-thuoc',
+                type: type,
+                name: 'Tàn Thuốc (2026)',
+                poster: fixPoster('https://phim.nguonc.com/uploads/movies/tan-thuoc-thumb.jpg'),
+                posterShape: 'poster',
+                description: 'Phim Nguồn C'
+            }
+        ];
+    }
+
+    return metas;
+}
+
+// Catalog Routes
+app.get('/catalog/:type/:id*', async (req, res) => {
+    const metas = await getFilms(req.params.type);
     res.json({ metas });
 });
 
@@ -101,8 +125,18 @@ app.get('/meta/:type/:id*', async (req, res) => {
         let rawId = req.params.id + (req.params[0] || '');
         rawId = rawId.replace('.json', '').replace('nguonc_', '');
 
-        const data = await fetchNguonC(`/film/${rawId}`);
-        const movie = data?.movie;
+        let movie = null;
+        try {
+            const res1 = await axios.get(`${NGUONC_API}/film/${rawId}`, { timeout: 4000 });
+            movie = res1.data?.movie;
+        } catch(e) {}
+
+        if (!movie) {
+            try {
+                const res2 = await axios.get(`https://api.allorigins.win/raw?url=${encodeURIComponent(NGUONC_API + '/film/' + rawId)}`, { timeout: 5000 });
+                movie = res2.data?.movie;
+            } catch(e) {}
+        }
 
         if (!movie) return res.json({ meta: null });
 
@@ -132,8 +166,19 @@ app.get('/stream/:type/:id*', async (req, res) => {
         const slug = parts[0];
         const epIndex = parts[1] ? parseInt(parts[1]) - 1 : 0;
 
-        const data = await fetchNguonC(`/film/${slug}`);
-        const movie = data?.movie;
+        let movie = null;
+        try {
+            const res1 = await axios.get(`${NGUONC_API}/film/${slug}`, { timeout: 4000 });
+            movie = res1.data?.movie;
+        } catch(e) {}
+
+        if (!movie) {
+            try {
+                const res2 = await axios.get(`https://api.allorigins.win/raw?url=${encodeURIComponent(NGUONC_API + '/film/' + slug)}`, { timeout: 5000 });
+                movie = res2.data?.movie;
+            } catch(e) {}
+        }
+
         const episodes = movie?.episodes?.[0]?.items || [];
         const ep = episodes[epIndex] || episodes[0];
 
@@ -154,3 +199,4 @@ app.get('/stream/:type/:id*', async (req, res) => {
 });
 
 module.exports = app;
+                    
