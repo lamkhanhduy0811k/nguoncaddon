@@ -10,11 +10,12 @@ const NGUONC_API = 'https://phim.nguonc.com/api';
 // 1. Khai báo Manifest chuẩn Stremio
 const manifest = {
     id: 'com.sieutamphim.nguonc',
-    version: '1.0.1',
+    version: '1.0.2',
     name: 'Siêu Tầm Phim (Nguồn C)',
     description: 'Xem phim Vietsub/Thuyết minh từ Nguồn C trên Stremio',
     resources: ['catalog', 'meta', 'stream'],
     types: ['movie', 'series'],
+    idPrefixes: ['nguonc_'],
     catalogs: [
         {
             type: 'movie',
@@ -50,14 +51,14 @@ async function getCatalogMetas(type, extraStr) {
 
     return items.map(item => ({
         id: `nguonc_${item.slug}`,
-        type: type,
+        type: type || 'movie',
         name: item.name,
-        poster: item.thumb_url || item.poster_url,
+        poster: item.thumb_url || item.poster_url || '',
         description: `Tên gốc: ${item.original_name || ''}`
     }));
 }
 
-// 2. Lấy danh sách phim & Tìm kiếm (Chia 2 đường dẫn để tránh lỗi Route)
+// 2. Lấy danh sách phim & Tìm kiếm
 app.get('/catalog/:type/:id.json', async (req, res) => {
     try {
         const metas = await getCatalogMetas(req.params.type, null);
@@ -90,10 +91,10 @@ app.get('/meta/:type/:id.json', async (req, res) => {
                 id: req.params.id,
                 type: req.params.type,
                 name: movie.name,
-                poster: movie.thumb_url || movie.poster_url,
-                background: movie.poster_url || movie.thumb_url,
+                poster: movie.thumb_url || movie.poster_url || '',
+                background: movie.poster_url || movie.thumb_url || '',
                 description: movie.description ? movie.description.replace(/<[^>]*>?/gm, '') : '',
-                year: movie.year || ''
+                year: movie.year ? String(movie.year) : ''
             }
         });
     } catch (e) {
@@ -136,3 +137,4 @@ app.get('/stream/:type/:id.json', async (req, res) => {
 
 const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+            
