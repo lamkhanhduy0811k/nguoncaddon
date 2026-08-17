@@ -25,10 +25,10 @@ function formatPoster(posterUrl, thumbUrl, prefix = 'https://img.ophim.live/uplo
 }
 
 const manifest = {
-    id: 'vn.ophim.phimapi.v47',
-    version: '47.0.0',
+    id: 'vn.ophim.phimapi.v48',
+    version: '48.0.0',
     name: 'Ổ Phim',
-    description: 'Ổ Phim lọc nghiêm ngặt, loại bỏ hoàn toàn phim rác không có nguồn',
+    description: 'Ổ Phim tối ưu kết quả tìm kiếm duy nhất, không bị lặp dòng',
     resources: ['catalog', 'meta', 'stream'],
     types: ['movie', 'series'],
     idPrefixes: ['op_'],
@@ -36,7 +36,7 @@ const manifest = {
         {
             type: 'series',
             id: 'phim_bo',
-            name: 'Ổ Phim - Phim Bộ',
+            name: 'Ổ Phim',
             extra: [{ name: 'search', isRequired: false }]
         },
         {
@@ -91,6 +91,11 @@ app.get('/catalog/:type/:id*', async (req, res) => {
     rawId = rawId.replace('.json', '');
 
     if (rawId.includes('search=')) {
+        // Chỉ cho phép danh mục 'phim_bo' trả kết quả tìm kiếm để gom tất cả về 1 dòng duy nhất, các danh mục khác trả về rỗng để tránh lặp
+        if (!rawId.startsWith('phim_bo')) {
+            return res.json({ metas: [] });
+        }
+
         const queryMatch = rawId.match(/search=([^&]+)/);
         const keyword = queryMatch ? decodeURIComponent(queryMatch[1]) : '';
 
@@ -296,4 +301,4 @@ app.get('/stream/:type/:id*', async (req, res) => {
 
 app.listen(process.env.PORT || 3000);
 module.exports = app;
-                                 
+            
