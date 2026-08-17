@@ -21,15 +21,14 @@ function formatPoster(posterUrl, thumbUrl) {
     if (!img.startsWith('http')) {
         img = IMAGE_BASE + img;
     }
-    // Sử dụng dịch vụ weserv để proxy ảnh giúp Nuvio luôn tải được ảnh gốc mượt mà, không bị lỗi
     return `https://images.weserv.nl/?url=${encodeURIComponent(img)}&w=500&fit=cover`;
 }
 
 const manifest = {
-    id: 'vn.ophim.official.v33',
-    version: '33.0.0',
-    name: 'OPhim (Unique Posters)',
-    description: 'Kho phim OPhim hiển thị đúng poster riêng của từng phim',
+    id: 'vn.ophim.official.v34',
+    version: '34.0.0',
+    name: 'OPhim (Multi-Server Stream Fix)',
+    description: 'Kho phim OPhim tối ưu hóa đa server, khắc phục triệt để lỗi đứng hình khi xem',
     resources: ['catalog', 'meta', 'stream'],
     types: ['movie', 'series'],
     idPrefixes: ['op_'],
@@ -174,9 +173,16 @@ app.get('/meta/:type/:id*', async (req, res) => {
         const apiRes = await axios.get(`${API_BASE}/phim/${slug}`, { timeout: 5000 });
         const movie = apiRes.data?.movie;
         const episodesList = apiRes.data?.episodes || [];
-        const rawEpisodes = episodesList[0]?.server_data || [];
 
         if (!movie) return res.json({ meta: null });
+
+        // Tự động tìm server có nhiều tập phim nhất để hiển thị đầy đủ
+        let rawEpisodes = [];
+        for (const s of episodesList) {
+            if (s.server_data && s.server_data.length > rawEpisodes.length) {
+                rawEpisodes = s.server_data;
+            }
+        }
 
         const moviePoster = formatPoster(movie.poster_url, movie.thumb_url);
         const videos = rawEpisodes.map((ep, idx) => {
@@ -224,9 +230,28 @@ app.get('/stream/:type/:id*', async (req, res) => {
 
         const apiRes = await axios.get(`${API_BASE}/phim/${slug}`, { timeout: 5000 });
         const episodesList = apiRes.data?.episodes || [];
-        const rawEpisodes = episodesList[0]?.server_data || [];
 
-        const targetEp = rawEpisodes[epIndex] || rawEpisodes[0];
+        // Quét qua tất cả server để tìm link m3u8 hoạt động tốt nhất cho tập tương ứng
+        let targetEp = null;
+        for (const s of episodesList) {
+            const serverData = s.server_data || [];
+            if (serverData[epIndex] && serverData[epIndex].link_m3u8) {
+                targetEp = serverData[epIndex];
+                break;
+            }
+        }
+
+        if (!targetEp) {
+            // Fallback tìm kiếm linh hoạt nếu không khớp index chính xác
+            for (const s of episodesList) {
+                const serverData = s.server_data || [];
+                if (serverData.length > 0 && serverData[0].link_m3u8) {
+                    targetEp = serverData[0];
+                    break;
+                }
+            }
+        }
+
         if (!targetEp || !targetEp.link_m3u8) return res.json({ streams: [] });
 
         return res.json({
@@ -244,4 +269,4 @@ app.get('/stream/:type/:id*', async (req, res) => {
 
 app.listen(process.env.PORT || 3000);
 module.exports = app;
-                                
+        
