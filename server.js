@@ -16,25 +16,39 @@ const API_BASE = 'https://ophim1.com';
 
 function formatPoster(url) {
     if (!url) return 'https://image.tmdb.org/t/p/w500/1E5ba88S318X4Pz2goR2vKCoBu.jpg';
-    if (url.startsWith('http://') || url.startsWith('https://')) {
-        return url.replace('http://', 'https://');
+    
+    let cleanUrl = url.trim();
+    if (!cleanUrl.startsWith('http')) {
+        cleanUrl = cleanUrl.replace(/^\/+/, '');
+        if (cleanUrl.startsWith('uploads/')) {
+            cleanUrl = `https://img.phimimg.com/${cleanUrl}`;
+        } else {
+            cleanUrl = `https://img.phimimg.com/uploads/movies/${cleanUrl}`;
+        }
     }
-    const cleanUrl = url.replace(/^\/+/, '');
-    return `https://img.ophim1.com/${cleanUrl}`;
+    
+    cleanUrl = cleanUrl.replace('img.ophim.cc', 'img.phimimg.com')
+                       .replace('img.ophim1.com', 'img.phimimg.com')
+                       .replace('http://', 'https://');
+
+    // Dùng proxy wsrv.nl để load ảnh cực mượt, không bao giờ bị đen
+    return `https://wsrv.nl/?url=${encodeURIComponent(cleanUrl)}&w=500&output=jpg`;
 }
 
 function getBestPoster(item) {
-    // Chỉ lấy poster chuẩn từ API, không dùng thumb cắt khung hình từ phim
     if (item.poster_url && item.poster_url.trim() !== '') {
         return formatPoster(item.poster_url);
+    }
+    if (item.thumb_url && item.thumb_url.trim() !== '') {
+        return formatPoster(item.thumb_url);
     }
     return 'https://image.tmdb.org/t/p/w500/1E5ba88S318X4Pz2goR2vKCoBu.jpg';
 }
 
 const manifest = {
-    id: 'vn.nguonc.official.v33',
-    version: '33.0.0',
-    name: 'Nguồn C',
+    id: 'vn.nguonc.official.v34',
+    version: '34.0.0',
+    name: 'Nguồn C (Pro)',
     description: 'Kho phim độc quyền đa dạng, fix triệt để lỗi ảnh',
     resources: ['catalog', 'meta', 'stream'],
     types: ['movie', 'series'],
@@ -231,3 +245,4 @@ app.get('/stream/:type/:id*', async (req, res) => {
 
 app.listen(process.env.PORT || 3000);
 module.exports = app;
+                                                                                               
