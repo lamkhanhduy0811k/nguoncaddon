@@ -25,10 +25,10 @@ function formatPoster(posterUrl, thumbUrl) {
 }
 
 const manifest = {
-    id: 'vn.ophim.official.v37',
-    version: '37.0.0',
-    name: 'OPhim (Smart Search Fallback)',
-    description: 'Kho phim OPhim tích hợp cơ chế tự động tìm kiếm thông minh chống mất nguồn',
+    id: 'vn.ophim.official.v38',
+    version: '38.0.0',
+    name: 'OPhim (Universal ID Resolver)',
+    description: 'Kho phim OPhim tương thích tuyệt đối mọi nguồn ID trên Nuvio',
     resources: ['catalog', 'meta', 'stream'],
     types: ['movie', 'series'],
     idPrefixes: ['op_'],
@@ -78,6 +78,51 @@ async function fetchMultiplePages(typePath, maxPages = 15) {
         allItems = allItems.concat(items);
     });
     return allItems;
+}
+
+// Hàm phân giải thông minh: Hỗ trợ cả ID nội bộ lẫn ID toàn cầu (IMDb từ Cinemeta)
+async function getOPhimSlugAndData(type, rawId) {
+    let cleanId = rawId.replace('.json', '');
+    let slug = '';
+
+    if (cleanId.startsWith('op_')) {
+        slug = cleanId.replace('op_', '').split(':')[0];
+    } else {
+        // Nếu là ID từ nguồn ngoài (IMDb tt...), truy vấn Cinemeta để lấy tên phim gốc
+        try {
+            const cinemetaRes = await axios.get(`https://v3-cinemeta.strem.io/meta/${type}/${cleanId}.json`, { timeout: 4000 });
+            const meta = cinemetaRes.data?.meta;
+            if (meta && meta.name) {
+                const searchRes = await axios.get(`${API_BASE}/v1/api/tim-kiem?keyword=${encodeURIComponent(meta.name)}&limit=1`, { timeout: 4000 });
+                const items = searchRes.data?.data?.items || [];
+                if (items.length > 0) {
+                    slug = items[0].slug;
+                }
+            }
+        } catch (err) {
+            // Bỏ qua lỗi kết nối Cinemeta
+        }
+    }
+
+    if (!slug) {
+        slug = cleanId.replace('op_', '').split(':')[0];
+    }
+
+    try {
+        let apiRes = await axios.get(`${API_BASE}/phim/${slug}`, { timeout: 5000 });
+        if (!apiRes.data?.movie) {
+            const searchKeyword = slug.replace(/-/g, ' ');
+            const searchRes = await axios.get(`${API_BASE}/v1/api/tim-kiem?keyword=${encodeURIComponent(searchKeyword)}&limit=1`, { timeout: 4000 });
+            const items = searchRes.data?.data?.items || [];
+            if (items.length > 0) {
+                slug = items[0].slug;
+                apiRes = await axios.get(`${API_BASE}/phim/${slug}`, { timeout: 5000 });
+            }
+        }
+        return { slug, data: apiRes.data };
+    } catch (e) {
+        return { slug, data: null };
+    }
 }
 
 app.get('/catalog/:type/:id*', async (req, res) => {
@@ -150,25 +195,12 @@ app.get('/catalog/:type/:id*', async (req, res) => {
 app.get('/meta/:type/:id*', async (req, res) => {
     try {
         let rawId = req.params.id + (req.params[0] || '');
-        let slug = rawId.replace('.json', '').replace('op_', '');
+        const { slug, data } = await getOPhimSlugAndData(req.params.type, rawId);
 
-        let apiRes = await axios.get(`${API_BASE}/phim/${slug}`, { timeout: 4000 }).catch(() => null);
-        
-        // Nếu slug không tồn tại trên hệ thống OPhim, tự động kích hoạt tìm kiếm theo tên slug để gỡ lỗi
-        if (!apiRes || !apiRes.data?.movie) {
-            const searchKeyword = slug.replace(/-/g, ' ');
-            const searchRes = await axios.get(`${API_BASE}/v1/api/tim-kiem?keyword=${encodeURIComponent(searchKeyword)}&limit=1`, { timeout: 4000 }).catch(() => null);
-            const foundItems = searchRes?.data?.data?.items || [];
-            if (foundItems.length > 0) {
-                slug = foundItems[0].slug;
-                apiRes = await axios.get(`${API_BASE}/phim/${slug}`, { timeout: 4000 }).catch(() => null);
-            }
-        }
+        if (!data || !data.movie) return res.json({ meta: null });
 
-        const movie = apiRes?.data?.movie;
-        const episodesList = apiRes?.data?.episodes || [];
-
-        if (!movie) return res.json({ meta: null });
+        const movie = data.movie;
+        const episodesList = data.episodes || [];
 
         let rawEpisodes = [];
         for (const s of episodesList) {
@@ -215,29 +247,19 @@ app.get('/meta/:type/:id*', async (req, res) => {
 app.get('/stream/:type/:id*', async (req, res) => {
     try {
         let rawId = req.params.id + (req.params[0] || '');
-        rawId = rawId.replace('.json', '').replace('op_', '');
-
-        const parts = rawId.split(':');
-        let slug = parts[0];
+        const parts = rawId.replace('.json', '').split(':');
+        const baseId = parts[0];
         const epIndex = parts[1] ? parseInt(parts[1]) - 1 : 0;
 
-        let apiRes = await axios.get(`${API_BASE}/phim/${slug}`, { timeout: 4000 }).catch(() => null);
-        if (!apiRes || !apiRes.data?.episodes) {
-            const searchKeyword = slug.replace(/-/g, ' ');
-            const searchRes = await axios.get(`${API_BASE}/v1/api/tim-kiem?keyword=${encodeURIComponent(searchKeyword)}&limit=1`, { timeout: 4000 }).catch(() => null);
-            const foundItems = searchRes?.data?.data?.items || [];
-            if (foundItems.length > 0) {
-                slug = foundItems[0].slug;
-                apiRes = await axios.get(`${API_BASE}/phim/${slug}`, { timeout: 4000 }).catch(() => null);
-            }
-        }
+        const { slug, data } = await getOPhimSlugAndData(req.params.type, baseId);
+        if (!data || !data.episodes) return res.json({ streams: [] });
 
-        const episodesList = apiRes?.data?.episodes || [];
+        const episodesList = data.episodes || [];
 
         let targetEp = null;
         for (const s of episodesList) {
             const serverData = s.server_data || [];
-            if (serverData[epIndex] && serverData[epIndex].link_m3u8) {
+            if (serverData[epIndex] && (serverData[epIndex].link_m3u8 || serverData[epIndex].link_embed)) {
                 targetEp = serverData[epIndex];
                 break;
             }
@@ -246,28 +268,35 @@ app.get('/stream/:type/:id*', async (req, res) => {
         if (!targetEp) {
             for (const s of episodesList) {
                 const serverData = s.server_data || [];
-                if (serverData.length > 0 && serverData[0].link_m3u8) {
+                if (serverData.length > 0 && (serverData[0].link_m3u8 || serverData[0].link_embed)) {
                     targetEp = serverData[0];
                     break;
                 }
             }
         }
 
-        if (!targetEp || !targetEp.link_m3u8) return res.json({ streams: [] });
+        if (!targetEp) return res.json({ streams: [] });
 
-        return res.json({
-            streams: [
-                {
-                    title: `OPhim - ${targetEp.name || 'Full'}`,
-                    url: targetEp.link_m3u8
-                }
-            ]
-        });
+        const streams = [];
+        if (targetEp.link_m3u8) {
+            streams.push({
+                title: `OPhim - ${targetEp.name || 'Full'} (M3U8)`,
+                url: targetEp.link_m3u8
+            });
+        }
+        if (targetEp.link_embed) {
+            streams.push({
+                title: `OPhim - ${targetEp.name || 'Full'} (Embed)`,
+                url: targetEp.link_embed
+            });
+        }
+
+        return res.json({ streams });
     } catch (e) {
-        res.json({ streams: [] });
+        return res.json({ streams: [] });
     }
 });
 
 app.listen(process.env.PORT || 3000);
 module.exports = app;
-        
+            
