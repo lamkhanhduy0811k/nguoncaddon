@@ -25,10 +25,10 @@ function formatPoster(posterUrl, thumbUrl, prefix = 'https://img.ophim.live/uplo
 }
 
 const manifest = {
-    id: 'vn.ophim.phimapi.v45',
-    version: '45.0.0',
+    id: 'vn.ophim.phimapi.v46',
+    version: '46.0.0',
     name: 'Ổ Phim',
-    description: 'Ổ Phim lọc thông minh, tự động ẩn phim không có nguồn phát',
+    description: 'Ổ Phim lọc tuyệt đối, ẩn hoàn toàn phim không có nguồn',
     resources: ['catalog', 'meta', 'stream'],
     types: ['movie', 'series'],
     idPrefixes: ['op_'],
@@ -221,7 +221,7 @@ app.get('/meta/:type/:id*', async (req, res) => {
             } catch(e) {}
         }
 
-        // Nếu hoàn toàn không có dữ liệu nguồn stream, trả về null để ẩn/không hiển thị trang rác
+        // Chặn tuyệt đối nếu không tìm thấy phim trên cả 2 server nguồn
         if (!movie) return res.json({ meta: null });
 
         let rawEpisodes = [];
@@ -231,6 +231,7 @@ app.get('/meta/:type/:id*', async (req, res) => {
             }
         }
 
+        // Chặn tuyệt đối nếu phim có tồn tại nhưng danh sách tập/server trống
         if (rawEpisodes.length === 0) return res.json({ meta: null });
 
         const moviePoster = formatPoster(movie.poster_url, movie.thumb_url, imagePrefix);
