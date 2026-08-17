@@ -14,7 +14,7 @@ app.use((req, res, next) => {
 
 const API_BASE = 'https://ophim1.com';
 
-// Hàm xử lý ảnh chuẩn, dùng Proxy quốc tế để vượt tường lửa chặn mạng tại Việt Nam
+// Sử dụng WordPress Photon CDN (i0.wp.com) để vượt hoàn toàn tường lửa nhà mạng VN
 function formatPoster(url) {
     if (!url || typeof url !== 'string' || url.trim() === '') {
         return 'https://image.tmdb.org/t/p/w500/1E5ba88S318X4Pz2goR2vKCoBu.jpg';
@@ -33,8 +33,8 @@ function formatPoster(url) {
         cleanUrl = `img.phimimg.com/${cleanUrl}`;
     }
     
-    // Đưa qua CDN Proxy để bypass hoàn toàn lỗi đen ảnh tại VN
-    return `https://images.weserv.nl/?url=https://${encodeURIComponent(cleanUrl)}&w=400&h=600&fit=cover&output=jpg&n=-1`;
+    // CDN WordPress giúp load ảnh siêu mượt, không bị nhà mạng chặn
+    return `https://i0.wp.com/${cleanUrl}`;
 }
 
 function getBestPoster(item) {
@@ -49,9 +49,9 @@ function getBestPoster(item) {
 
 const manifest = {
     id: 'vn.nguonc.official.v26',
-    version: '26.2.0',
-    name: 'Nguồn C (Bản Chuẩn - Fix Ảnh)',
-    description: 'Kho phim độc quyền, fix triệt để lỗi đen ảnh và tìm kiếm',
+    version: '26.3.0',
+    name: 'Nguồn C (Bản Chuẩn - Photon CDN)',
+    description: 'Kho phim độc quyền, fix triệt để lỗi đen ảnh bằng WordPress CDN',
     resources: ['catalog', 'meta', 'stream'],
     types: ['movie', 'series'],
     idPrefixes: ['nc_'],
@@ -266,4 +266,3 @@ app.get('/stream/:type/:id*', async (req, res) => {
 
 app.listen(process.env.PORT || 3000);
 module.exports = app;
-            
