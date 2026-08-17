@@ -15,7 +15,6 @@ app.use((req, res, next) => {
 const API_BASE = 'https://phimapi.com';
 const CDN_IMAGE = 'https://phimimg.com';
 
-// Hàm chuẩn hóa ảnh poster - Bao mượt 100% không bị xám
 function formatPoster(url) {
     if (!url) return 'https://image.tmdb.org/t/p/w500/1E5ba88S318X4Pz2goR2vKCoBu.jpg';
     if (url.startsWith('http://') || url.startsWith('https://')) {
@@ -24,30 +23,30 @@ function formatPoster(url) {
     return `${CDN_IMAGE}/${url.replace(/^\//, '')}`;
 }
 
-// Manifest v8.0.0 chuẩn giao diện Nuvio
+// Manifest v9.0.0 cập nhật 3 danh mục chuẩn
 const manifest = {
-    id: 'com.suutamphim.nuvio.v8',
-    version: '8.0.0',
-    name: 'Sưu Tầm Phim',
-    description: 'Xem phim Vietsub/Thuyết minh chất lượng cao',
+    id: 'com.suutamphim.nuvio.v9',
+    version: '9.0.0',
+    name: 'Nguồn C Phim',
+    description: 'Xem Phim Bộ, Phim Lẻ và Hoạt Hình chất lượng cao',
     resources: ['catalog', 'meta', 'stream'],
     types: ['movie', 'series'],
     idPrefixes: ['phim_'],
     catalogs: [
         {
+            type: 'series',
+            id: 'phim_bo',
+            name: 'Nguồn C - Phim Bộ'
+        },
+        {
             type: 'movie',
-            id: 'phim_moi',
-            name: 'Sưu Tầm Phim - Phim Mới Cập Nhật'
+            id: 'phim_le',
+            name: 'Nguồn C - Phim Lẻ'
         },
         {
             type: 'series',
-            id: 'phim_han_quoc',
-            name: 'Sưu Tầm Phim - Phim Hàn Quốc'
-        },
-        {
-            type: 'series',
-            id: 'phim_hong_kong',
-            name: 'Sưu Tầm Phim - Phim Hồng Kông'
+            id: 'hoat_hinh',
+            name: 'Nguồn C - Hoạt Hình'
         }
     ]
 };
@@ -58,18 +57,20 @@ app.get('/manifest.json', (req, res) => res.json(manifest));
 // Catalog Route
 app.get('/catalog/:type/:id*', async (req, res) => {
     const id = req.params.id;
-    let url = `${API_BASE}/danh-sach/phim-moi-cap-nhat?page=1`;
+    let categoryPath = 'phim-bo';
 
-    if (id === 'phim_han_quoc') {
-        url = `${API_BASE}/v1/api/quoc-gia/han-quoc?page=1`;
-    } else if (id === 'phim_hong_kong') {
-        url = `${API_BASE}/v1/api/quoc-gia/hong-kong?page=1`;
+    if (id === 'phim_le') {
+        categoryPath = 'phim-le';
+    } else if (id === 'hoat_hinh') {
+        categoryPath = 'hoat-hinh';
     }
+
+    const url = `${API_BASE}/v1/api/danh-sach/${categoryPath}?page=1`;
 
     try {
         const apiRes = await axios.get(url, { timeout: 4000 });
         const data = apiRes.data;
-        const items = data?.items || data?.data?.items || [];
+        const items = data?.data?.items || data?.items || [];
 
         const metas = items.map(item => {
             const year = item.year || '2026';
@@ -130,7 +131,7 @@ app.get('/stream/:type/:id*', async (req, res) => {
         const episodes = apiRes.data?.episodes?.[0]?.server_data || [];
 
         const streams = episodes.map(ep => ({
-            title: `Sưu Tầm Phim - ${ep.name || 'Full'}`,
+            title: `Nguồn C - ${ep.name || 'Full'}`,
             url: ep.link_m3u8
         })).filter(s => s.url);
 
@@ -141,4 +142,4 @@ app.get('/stream/:type/:id*', async (req, res) => {
 });
 
 module.exports = app;
-        
+            
