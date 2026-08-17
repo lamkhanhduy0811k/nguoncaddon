@@ -17,8 +17,7 @@ const API_BASE = 'https://ophim1.com';
 function formatPoster(url) {
     if (!url) return 'https://image.tmdb.org/t/p/w500/1E5ba88S318X4Pz2goR2vKCoBu.jpg';
     if (url.startsWith('http://') || url.startsWith('https://')) {
-        return url.replace(/img\.ophim\.(cc|com)/g, 'img.phimimg.com')
-                  .replace(/ophim1\.com/g, 'phimimg.com');
+        return url.replace('http://', 'https://');
     }
     const cleanUrl = url.replace(/^\/+/, '');
     if (cleanUrl.startsWith('uploads/')) {
@@ -38,10 +37,10 @@ function getBestPoster(item) {
 }
 
 const manifest = {
-    id: 'vn.nguonc.official.v28',
-    version: '28.0.0',
+    id: 'vn.nguonc.official.v29',
+    version: '29.0.0',
     name: 'Nguồn C',
-    description: 'Kho phim độc quyền đa dạng, poster phimimg',
+    description: 'Kho phim độc quyền đa dạng, poster chuẩn HD',
     resources: ['catalog', 'meta', 'stream'],
     types: ['movie', 'series'],
     idPrefixes: ['nc_'],
@@ -237,4 +236,3 @@ app.get('/stream/:type/:id*', async (req, res) => {
 
 app.listen(process.env.PORT || 3000);
 module.exports = app;
-                    
