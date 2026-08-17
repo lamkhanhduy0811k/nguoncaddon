@@ -13,17 +13,22 @@ app.use((req, res, next) => {
 });
 
 const API_BASE = 'https://ophim1.com';
-const CDN_URL = 'https://img.ophim.cc/uploads/movies/';
 
 function formatPoster(url) {
     if (!url) return 'https://image.tmdb.org/t/p/w500/1E5ba88S318X4Pz2goR2vKCoBu.jpg';
-    if (url.startsWith('http')) return url;
-    return `${CDN_URL}${url}`;
+    if (url.startsWith('http://') || url.startsWith('https://')) {
+        return url;
+    }
+    const cleanUrl = url.replace(/^\//, '');
+    if (cleanUrl.startsWith('uploads/')) {
+        return `https://img.ophim.cc/${cleanUrl}`;
+    }
+    return `https://img.ophim.cc/uploads/movies/${cleanUrl}`;
 }
 
 const manifest = {
-    id: 'vn.nguonc.official.v22',
-    version: '22.0.0',
+    id: 'vn.nguonc.official.v23',
+    version: '23.0.0',
     name: 'Nguồn C',
     description: 'Kho phim độc quyền đa dạng, chất lượng cao',
     resources: ['catalog', 'meta', 'stream'],
@@ -60,7 +65,6 @@ const manifest = {
 app.get('/', (req, res) => res.json(manifest));
 app.get('/manifest.json', (req, res) => res.json(manifest));
 
-// Lấy danh sách phim khoảng 500 bộ (tải song song nhiều trang)
 async function fetchMultiplePages(typePath, maxPages = 20) {
     let allItems = [];
     let promises = [];
@@ -110,15 +114,13 @@ app.get('/catalog/:type/:id*', async (req, res) => {
             items = await fetchMultiplePages('phim-le', 25);
         } else if (rawId.startsWith('anime')) {
             const rawAnime = await fetchMultiplePages('hoat-hinh', 15);
-            // Lọc các phim hoạt hình có quốc gia Nhật Bản hoặc tên liên quan Anime
             items = rawAnime.filter(i => {
                 const name = (i.name + ' ' + (i.origin_name || '')).toLowerCase();
                 return name.includes('nhật') || name.includes('japan') || i.category?.some(c => c.slug === 'hoat-hinh' && (c.name?.toLowerCase().includes('nhật') || c.slug?.includes('nhat')));
             });
-            if (items.length === 0) items = rawAnime; // Fallback nếu không khớp lọc
+            if (items.length === 0) items = rawAnime;
         } else if (rawId.startsWith('hoat_hinh_3d')) {
             const rawHH = await fetchMultiplePages('hoat-hinh', 20);
-            // Lọc hoạt hình Trung Quốc / 3D
             items = rawHH.filter(i => {
                 const name = (i.name + ' ' + (i.origin_name || '')).toLowerCase();
                 return name.includes('trung quốc') || name.includes('china') || name.includes('3d') || i.country?.some(c => c.slug === 'trung-quoc');
@@ -221,4 +223,4 @@ app.get('/stream/:type/:id*', async (req, res) => {
 });
 
 module.exports = app;
-                
+                                                                                           
