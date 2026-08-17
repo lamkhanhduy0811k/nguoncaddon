@@ -16,9 +16,22 @@ const API_BASE = 'https://ophim1.com';
 
 function formatPoster(url) {
     if (!url) return 'https://image.tmdb.org/t/p/w500/1E5ba88S318X4Pz2goR2vKCoBu.jpg';
+    
+    // Bắt buộc ép mọi link ảnh cũ/chết chuyển đổi hoàn toàn về img.phimimg.com
+    if (url.includes('uploads/')) {
+        const parts = url.split('uploads/');
+        const subPath = parts[1]; 
+        return `https://img.phimimg.com/uploads/${subPath}`;
+    }
+    
     if (url.startsWith('http://') || url.startsWith('https://')) {
+        const filename = url.split('/').pop();
+        if (filename) {
+            return `https://img.phimimg.com/uploads/movies/${filename}`;
+        }
         return url.replace('http://', 'https://');
     }
+    
     const cleanUrl = url.replace(/^\/+/, '');
     if (cleanUrl.startsWith('uploads/')) {
         return `https://img.phimimg.com/${cleanUrl}`;
@@ -37,10 +50,10 @@ function getBestPoster(item) {
 }
 
 const manifest = {
-    id: 'vn.nguonc.official.v29',
-    version: '29.0.0',
+    id: 'vn.nguonc.official.v30',
+    version: '30.0.0',
     name: 'Nguồn C',
-    description: 'Kho phim độc quyền đa dạng, poster chuẩn HD',
+    description: 'Kho phim độc quyền đa dạng, fix lỗi hoàn toàn ảnh poster',
     resources: ['catalog', 'meta', 'stream'],
     types: ['movie', 'series'],
     idPrefixes: ['nc_'],
@@ -236,3 +249,4 @@ app.get('/stream/:type/:id*', async (req, res) => {
 
 app.listen(process.env.PORT || 3000);
 module.exports = app;
+                                    
