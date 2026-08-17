@@ -14,24 +14,24 @@ app.use((req, res, next) => {
 
 const NGUONC_API = 'https://phim.nguonc.com/api';
 
-// Xử lý ảnh Poster chống xám/đen
+// Chuẩn hóa link poster qua Weserv Proxy (Tránh nhà mạng VN chặn & bypass chống lấy cắp ảnh)
 function fixPoster(url) {
-    if (!url) return 'https://image.tmdb.org/t/p/w500/7WsyChLLEz336bd3XD3Y938A9A2.jpg';
+    if (!url) return 'https://i.imgur.com/Q2AU42q.png';
     let clean = url.trim();
     if (clean.startsWith('//')) clean = 'https:' + clean;
     if (clean.startsWith('http://')) clean = clean.replace('http://', 'https://');
     if (!clean.startsWith('http')) {
         clean = 'https://phim.nguonc.com' + (clean.startsWith('/') ? '' : '/') + clean;
     }
-    return `https://wsrv.nl/?url=${encodeURIComponent(clean)}&w=300&h=450&fit=cover&default=https://image.tmdb.org/t/p/w500/7WsyChLLEz336bd3XD3Y938A9A2.jpg`;
+    return `https://images.weserv.nl/?url=${encodeURIComponent(clean)}&w=300&h=450&fit=cover&errorredirect=https://i.imgur.com/Q2AU42q.png`;
 }
 
-// Manifest v1.8.0 ép Nuvio reset bộ nhớ đệm
+// Manifest v2.0.0 làm mới cache Nuvio
 const manifest = {
-    id: 'com.nguonc.phim.v18',
-    version: '1.8.0',
+    id: 'com.nguonc.phim.v20',
+    version: '2.0.0',
     name: 'Siêu Tầm Phim (Nguồn C)',
-    description: 'Xem phim Vietsub/Thuyết minh từ Nguồn C',
+    description: 'Xem phim Vietsub/Thuyết minh từ Nguồn C (Full Danh Sách)',
     resources: ['catalog', 'meta', 'stream'],
     types: ['movie', 'series'],
     idPrefixes: ['nguonc_'],
@@ -52,84 +52,69 @@ const manifest = {
 app.get('/', (req, res) => res.json(manifest));
 app.get('/manifest.json', (req, res) => res.json(manifest));
 
-// Danh sách phim giữ cố định giao diện không bao giờ bị ẩn
-const FALLBACK_MOVIES = [
-    {
-        id: 'nguonc_trong-khi',
-        type: 'movie',
-        name: 'Trọng Khí (2026)',
-        poster: 'https://image.tmdb.org/t/p/w500/vpnVM9B6NMmM2z6M1M9A9A2.jpg',
-        posterShape: 'poster',
-        description: 'Phim Nguồn C'
-    },
-    {
-        id: 'nguonc_tan-thuoc',
-        type: 'movie',
-        name: 'Tàn Thuốc (2026)',
-        poster: 'https://image.tmdb.org/t/p/w500/7WsyChLLEz336bd3XD3Y938A9A2.jpg',
-        posterShape: 'poster',
-        description: 'Phim Nguồn C'
-    },
-    {
-        id: 'nguonc_lat-mat-7',
-        type: 'movie',
-        name: 'Lật Mặt 7: Một Điều Ước',
-        poster: 'https://image.tmdb.org/t/p/w500/uq2q06X5L3D5A465X3Y938A9A2.jpg',
-        posterShape: 'poster',
-        description: 'Phim Nguồn C'
-    }
-];
-
-const FALLBACK_SERIES = [
-    {
-        id: 'nguonc_trong-khi',
-        type: 'series',
-        name: 'Trọng Khí (2026)',
-        poster: 'https://image.tmdb.org/t/p/w500/vpnVM9B6NMmM2z6M1M9A9A2.jpg',
-        posterShape: 'poster',
-        description: 'Phim Bộ Nguồn C'
-    },
-    {
-        id: 'nguonc_tan-thuoc',
-        type: 'series',
-        name: 'Tàn Thuốc (2026)',
-        poster: 'https://image.tmdb.org/t/p/w500/7WsyChLLEz336bd3XD3Y938A9A2.jpg',
-        posterShape: 'poster',
-        description: 'Phim Bộ Nguồn C'
-    }
-];
-
-// Lấy danh sách phim siêu tốc dưới 2.5s
-async function fetchCatalogFast(type) {
+// Lấy dữ liệu 1 trang API kèm Header trình duyệt
+async function fetchPage(type, page = 1) {
     const endpoint = type === 'series' 
-        ? '/films/danh-sach/phim-bo?page=1' 
-        : '/films/phim-moi-cap-nhat?page=1';
+        ? `/films/danh-sach/phim-bo?page=${page}` 
+        : `/films/phim-moi-cap-nhat?page=${page}`;
+
+    const headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+        'Accept': 'application/json'
+    };
 
     try {
-        const response = await axios.get(`${NGUONC_API}${endpoint}`, {
-            timeout: 2500,
-            headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' }
-        });
-
-        const items = response.data?.items || [];
-        if (items.length > 0) {
-            return items.map(item => ({
-                id: `nguonc_${item.slug}`,
-                type: type === 'series' ? 'series' : 'movie',
-                name: item.name || 'Phim Nguồn C',
-                poster: fixPoster(item.thumb_url || item.poster_url),
-                posterShape: 'poster',
-                description: item.original_name ? `Tên gốc: ${item.original_name}` : ''
-            }));
-        }
+        const res = await axios.get(`${NGUONC_API}${endpoint}`, { headers, timeout: 3000 });
+        if (res.data?.items?.length > 0) return res.data.items;
     } catch (e) {}
 
-    return type === 'series' ? FALLBACK_SERIES : FALLBACK_MOVIES;
+    try {
+        const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(NGUONC_API + endpoint)}`;
+        const res = await axios.get(proxyUrl, { timeout: 3500 });
+        if (res.data?.items?.length > 0) return res.data.items;
+    } catch (e) {}
+
+    return [];
+}
+
+// Tải song song 5 trang (~100 phim thật) cực nhanh
+async function getCatalog(type) {
+    const pages = [1, 2, 3, 4, 5];
+    const results = await Promise.allSettled(pages.map(p => fetchPage(type, p)));
+    
+    let allItems = [];
+    results.forEach(res => {
+        if (res.status === 'fulfilled' && Array.isArray(res.value)) {
+            allItems = allItems.concat(res.value);
+        }
+    });
+
+    if (allItems.length > 0) {
+        return allItems.map(item => ({
+            id: `nguonc_${item.slug}`,
+            type: type === 'series' ? 'series' : 'movie',
+            name: item.name || 'Phim Nguồn C',
+            poster: fixPoster(item.thumb_url || item.poster_url),
+            posterShape: 'poster',
+            description: item.original_name ? `Tên gốc: ${item.original_name}` : ''
+        }));
+    }
+
+    return [
+        {
+            id: 'nguonc_demo',
+            type: type,
+            name: 'Nguồn C Đang Đang Cập Nhật',
+            poster: 'https://i.imgur.com/Q2AU42q.png',
+            posterShape: 'poster',
+            description: 'Vui lòng làm mới lại trang'
+        }
+    ];
 }
 
 // Catalog Route
 app.get('/catalog/:type/:id*', async (req, res) => {
-    const metas = await fetchCatalogFast(req.params.type);
+    const metas = await getCatalog(req.params.type);
     res.json({ metas });
 });
 
@@ -139,8 +124,21 @@ app.get('/meta/:type/:id*', async (req, res) => {
         let rawId = req.params.id + (req.params[0] || '');
         rawId = rawId.replace('.json', '').replace('nguonc_', '');
 
-        const response = await axios.get(`${NGUONC_API}/film/${rawId}`, { timeout: 3000 });
-        const movie = response.data?.movie;
+        let movie = null;
+        try {
+            const res1 = await axios.get(`${NGUONC_API}/film/${rawId}`, {
+                headers: { 'User-Agent': 'Mozilla/5.0' },
+                timeout: 3000
+            });
+            movie = res1.data?.movie;
+        } catch(e) {}
+
+        if (!movie) {
+            try {
+                const res2 = await axios.get(`https://api.allorigins.win/raw?url=${encodeURIComponent(NGUONC_API + '/film/' + rawId)}`, { timeout: 3500 });
+                movie = res2.data?.movie;
+            } catch(e) {}
+        }
 
         if (!movie) return res.json({ meta: null });
 
@@ -170,8 +168,22 @@ app.get('/stream/:type/:id*', async (req, res) => {
         const slug = parts[0];
         const epIndex = parts[1] ? parseInt(parts[1]) - 1 : 0;
 
-        const response = await axios.get(`${NGUONC_API}/film/${slug}`, { timeout: 3000 });
-        const movie = response.data?.movie;
+        let movie = null;
+        try {
+            const res1 = await axios.get(`${NGUONC_API}/film/${slug}`, {
+                headers: { 'User-Agent': 'Mozilla/5.0' },
+                timeout: 3000
+            });
+            movie = res1.data?.movie;
+        } catch(e) {}
+
+        if (!movie) {
+            try {
+                const res2 = await axios.get(`https://api.allorigins.win/raw?url=${encodeURIComponent(NGUONC_API + '/film/' + slug)}`, { timeout: 3500 });
+                movie = res2.data?.movie;
+            } catch(e) {}
+        }
+
         const episodes = movie?.episodes?.[0]?.items || [];
         const ep = episodes[epIndex] || episodes[0];
 
@@ -192,4 +204,4 @@ app.get('/stream/:type/:id*', async (req, res) => {
 });
 
 module.exports = app;
-                
+        
