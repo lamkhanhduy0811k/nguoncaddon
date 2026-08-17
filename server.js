@@ -15,24 +15,35 @@ app.use((req, res, next) => {
 const API_BASE = 'https://ophim1.com';
 
 function formatPoster(url) {
-    if (!url) return 'https://image.tmdb.org/t/p/w500/1E5ba88S318X4Pz2goR2vKCoBu.jpg';
-    
-    let cleanUrl = url.trim();
-    if (!cleanUrl.startsWith('http')) {
-        cleanUrl = cleanUrl.replace(/^\/+/, '');
-        if (cleanUrl.startsWith('uploads/')) {
-            cleanUrl = `https://img.phimimg.com/${cleanUrl}`;
-        } else {
-            cleanUrl = `https://img.phimimg.com/uploads/movies/${cleanUrl}`;
-        }
+    if (!url || typeof url !== 'string') {
+        return 'https://image.tmdb.org/t/p/w500/1E5ba88S318X4Pz2goR2vKCoBu.jpg';
     }
     
-    cleanUrl = cleanUrl.replace('img.ophim.cc', 'img.phimimg.com')
-                       .replace('img.ophim1.com', 'img.phimimg.com')
-                       .replace('http://', 'https://');
+    let cleanUrl = url.trim();
+    
+    // Xử lý triệt để trường hợp URL bị dính nhiều http/https hoặc lặp domain
+    if (cleanUrl.includes('http://') || cleanUrl.includes('https://')) {
+        const parts = cleanUrl.split(/https?:\/\//);
+        cleanUrl = 'https://' + parts[parts.length - 1];
+    } else {
+        cleanUrl = cleanUrl.replace(/^\/+/, '');
+        if (!cleanUrl.startsWith('uploads/')) {
+            cleanUrl = `uploads/movies/${cleanUrl}`;
+        }
+        cleanUrl = `https://img.phimimg.com/${cleanUrl}`;
+    }
 
-    // Dùng proxy wsrv.nl để load ảnh cực mượt, không bao giờ bị đen
-    return `https://wsrv.nl/?url=${encodeURIComponent(cleanUrl)}&w=500&output=jpg`;
+    // Chuẩn hóa toàn bộ domain cũ về domain CDN mới nhất
+    cleanUrl = cleanUrl
+        .replace('img.ophim.cc', 'img.phimimg.com')
+        .replace('img.ophim1.com', 'img.phimimg.com')
+        .replace('ophim1.com/uploads', 'img.phimimg.com/uploads');
+
+    // Loại bỏ dấu gạch chéo kép thừa trong đường dẫn
+    cleanUrl = cleanUrl.replace(/([^:]\/)\/+/g, '$1');
+
+    // Sử dụng Image Proxy wsrv.nl với tùy chọn bóp khung chuẩn poster giúp Nuvio render mượt mà tuyệt đối
+    return `https://wsrv.nl/?url=${encodeURIComponent(cleanUrl)}&w=400&h=600&fit=cover&output=jpg`;
 }
 
 function getBestPoster(item) {
@@ -46,9 +57,9 @@ function getBestPoster(item) {
 }
 
 const manifest = {
-    id: 'vn.nguonc.official.v34',
-    version: '34.0.0',
-    name: 'Nguồn C (Pro)',
+    id: 'vn.nguonc.official.v35',
+    version: '35.0.0',
+    name: 'Nguồn C (Ultra)',
     description: 'Kho phim độc quyền đa dạng, fix triệt để lỗi ảnh',
     resources: ['catalog', 'meta', 'stream'],
     types: ['movie', 'series'],
@@ -245,4 +256,3 @@ app.get('/stream/:type/:id*', async (req, res) => {
 
 app.listen(process.env.PORT || 3000);
 module.exports = app;
-                                                                                               
