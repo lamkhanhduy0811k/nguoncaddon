@@ -23,12 +23,12 @@ function formatPoster(url) {
     return `${CDN_IMAGE}/${url.replace(/^\//, '')}`;
 }
 
-// Manifest v9.0.0 cập nhật 3 danh mục chuẩn
+// Manifest v10.0.0 - Bắt buộc Nuvio load lại cấu trúc phân loại mới
 const manifest = {
-    id: 'com.suutamphim.nuvio.v9',
-    version: '9.0.0',
+    id: 'com.suutamphim.nuvio.v10',
+    version: '10.0.0',
     name: 'Nguồn C Phim',
-    description: 'Xem Phim Bộ, Phim Lẻ và Hoạt Hình chất lượng cao',
+    description: 'Phim Bộ, Phim Lẻ, Hoạt Hình phân loại chuẩn xác',
     resources: ['catalog', 'meta', 'stream'],
     types: ['movie', 'series'],
     idPrefixes: ['phim_'],
@@ -54,23 +54,21 @@ const manifest = {
 app.get('/', (req, res) => res.json(manifest));
 app.get('/manifest.json', (req, res) => res.json(manifest));
 
-// Catalog Route
+// Catalog Route - Phân loại phim chính xác 100%
 app.get('/catalog/:type/:id*', async (req, res) => {
-    const id = req.params.id;
-    let categoryPath = 'phim-bo';
+    let rawId = req.params.id + (req.params[0] || '');
+    rawId = rawId.replace('.json', '');
 
-    if (id === 'phim_le') {
-        categoryPath = 'phim-le';
-    } else if (id === 'hoat_hinh') {
-        categoryPath = 'hoat-hinh';
+    let typePath = 'phim-bo';
+    if (rawId === 'phim_le') {
+        typePath = 'phim-le';
+    } else if (rawId === 'hoat_hinh') {
+        typePath = 'hoat-hinh';
     }
 
-    const url = `${API_BASE}/v1/api/danh-sach/${categoryPath}?page=1`;
-
     try {
-        const apiRes = await axios.get(url, { timeout: 4000 });
-        const data = apiRes.data;
-        const items = data?.data?.items || data?.items || [];
+        const apiRes = await axios.get(`${API_BASE}/v1/api/danh-sach/${typePath}?page=1`, { timeout: 4000 });
+        const items = apiRes.data?.data?.items || apiRes.data?.items || [];
 
         const metas = items.map(item => {
             const year = item.year || '2026';
@@ -82,7 +80,7 @@ app.get('/catalog/:type/:id*', async (req, res) => {
                 name: item.name || item.title,
                 poster: formatPoster(item.poster_url || item.thumb_url),
                 posterShape: 'poster',
-                releaseInfo: `${year} • ${ep}`,
+                releaseInfo: `${year} •${ep}`,
                 description: item.origin_name ? `Tên gốc: ${item.origin_name}` : ''
             };
         });
@@ -113,7 +111,7 @@ app.get('/meta/:type/:id*', async (req, res) => {
                 background: formatPoster(movie.thumb_url || movie.poster_url),
                 description: movie.content ? movie.content.replace(/<[^>]*>?/gm, '') : '',
                 year: String(movie.year || '2026'),
-                releaseInfo: `${movie.year || '2026'} • ${movie.episode_current || 'Full'}`
+                releaseInfo: `${movie.year \vert{}\vert{} '2026'} •${movie.episode_current || 'Full'}`
             }
         });
     } catch (e) {
@@ -142,4 +140,3 @@ app.get('/stream/:type/:id*', async (req, res) => {
 });
 
 module.exports = app;
-            
