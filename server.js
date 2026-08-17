@@ -14,38 +14,7 @@ app.use((req, res, next) => {
 
 const API_BASE = 'https://ophim1.com';
 
-// Đổi route kết thúc bằng .jpg để app Nuvio nhận diện đúng định dạng ảnh
-app.get('/image-proxy.jpg', async (req, res) => {
-    const imageUrl = req.query.url;
-    if (!imageUrl) return res.status(400).send('Missing url');
-    try {
-        const response = await axios.get(imageUrl, {
-            responseType: 'arraybuffer',
-            timeout: 4000,
-            headers: {
-                'Referer': 'https://ophim1.com/',
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-            }
-        });
-        res.setHeader('Content-Type', response.headers['content-type'] || 'image/jpeg');
-        res.setHeader('Cache-Control', 'public, max-age=86400');
-        return res.send(Buffer.from(response.data, 'binary'));
-    } catch (error) {
-        try {
-            const fallbackRes = await axios.get('https://image.tmdb.org/t/p/w500/1E5ba88S318X4Pz2goR2vKCoBu.jpg', {
-                responseType: 'arraybuffer',
-                timeout: 3000
-            });
-            res.setHeader('Content-Type', 'image/jpeg');
-            res.setHeader('Cache-Control', 'public, max-age=86400');
-            return res.send(Buffer.from(fallbackRes.data, 'binary'));
-        } catch (err) {
-            return res.status(404).send('Not found');
-        }
-    }
-});
-
-function formatPoster(url, req) {
+function formatPoster(url) {
     if (!url || typeof url !== 'string' || url.trim() === '') {
         return 'https://image.tmdb.org/t/p/w500/1E5ba88S318X4Pz2goR2vKCoBu.jpg';
     }
@@ -63,27 +32,14 @@ function formatPoster(url, req) {
         cleanUrl = `https://img.phimimg.com/${cleanUrl}`;
     }
     
-    const host = req ? req.get('host') : 'nguoncaddon.vercel.app';
-    const protocol = req ? req.protocol : 'https';
-    
-    return `${protocol}://${host}/image-proxy.jpg?url=${encodeURIComponent(cleanUrl)}`;
-}
-
-function getBestPoster(item, req) {
-    if (item.poster_url && item.poster_url.trim() !== '') {
-        return formatPoster(item.poster_url, req);
-    }
-    if (item.thumb_url && item.thumb_url.trim() !== '') {
-        return formatPoster(item.thumb_url, req);
-    }
-    return 'https://image.tmdb.org/t/p/w500/1E5ba88S318X4Pz2goR2vKCoBu.jpg';
+    return cleanUrl;
 }
 
 const manifest = {
-    id: 'vn.ophim.official.v26',
-    version: '26.6.0',
-    name: 'OPhim (Fixed Extension)',
-    description: 'Kho phim OPhim, fix lỗi hiển thị ảnh poster định dạng .jpg',
+    id: 'vn.ophim.official.v27',
+    version: '27.0.0',
+    name: 'OPhim (Direct Image)',
+    description: 'Kho phim OPhim tối ưu hóa hiển thị ảnh trực tiếp',
     resources: ['catalog', 'meta', 'stream'],
     types: ['movie', 'series'],
     idPrefixes: ['op_'],
@@ -169,7 +125,7 @@ app.get('/catalog/:type/:id*', async (req, res) => {
                 id: `op_${item.slug}`,
                 type: req.params.type,
                 name: item.name || item.title,
-                poster: getBestPoster(item, req),
+                poster: formatPoster(item.poster_url || item.thumb_url),
                 posterShape: 'poster',
                 releaseInfo: `${item.year || '2026'} • ${item.episode_current || 'Full'}`,
                 description: item.origin_name ? `Tên gốc: ${item.origin_name}` : ''
@@ -208,7 +164,7 @@ app.get('/catalog/:type/:id*', async (req, res) => {
             id: `op_${item.slug}`,
             type: req.params.type,
             name: item.name || item.title,
-            poster: getBestPoster(item, req),
+            poster: formatPoster(item.poster_url || item.thumb_url),
             posterShape: 'poster',
             releaseInfo: `${item.year || '2026'} • ${item.episode_current || 'Full'}`,
             description: item.origin_name ? `Tên gốc: ${item.origin_name}` : ''
@@ -232,7 +188,7 @@ app.get('/meta/:type/:id*', async (req, res) => {
 
         if (!movie) return res.json({ meta: null });
 
-        const moviePoster = getBestPoster(movie, req);
+        const moviePoster = formatPoster(movie.poster_url || movie.thumb_url);
         const videos = rawEpisodes.map((ep, idx) => {
             let epNum = idx + 1;
             let epTitle = ep.name ? String(ep.name).trim() : `Tập ${epNum}`;
@@ -298,3 +254,4 @@ app.get('/stream/:type/:id*', async (req, res) => {
 
 app.listen(process.env.PORT || 3000);
 module.exports = app;
+            
