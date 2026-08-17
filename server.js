@@ -25,10 +25,10 @@ function formatPoster(posterUrl, thumbUrl) {
 }
 
 const manifest = {
-    id: 'vn.ophim.official.v39',
-    version: '39.0.0',
+    id: 'vn.ophim.official.v40',
+    version: '40.0.0',
     name: 'Ổ Phim',
-    description: 'Kho phim Ổ Phim tổng hợp đa server, xem mượt mà trên Nuvio',
+    description: 'Kho phim Ổ Phim đa server, tối ưu hóa toàn diện luồng phát và tìm kiếm',
     resources: ['catalog', 'meta', 'stream'],
     types: ['movie', 'series'],
     idPrefixes: ['op_'],
@@ -90,11 +90,15 @@ async function getOPhimSlugAndData(type, rawId) {
         try {
             const cinemetaRes = await axios.get(`https://v3-cinemeta.strem.io/meta/${type}/${cleanId}.json`, { timeout: 4000 });
             const meta = cinemetaRes.data?.meta;
-            if (meta && meta.name) {
-                const searchRes = await axios.get(`${API_BASE}/v1/api/tim-kiem?keyword=${encodeURIComponent(meta.name)}&limit=1`, { timeout: 4000 });
-                const items = searchRes.data?.data?.items || [];
-                if (items.length > 0) {
-                    slug = items[0].slug;
+            if (meta) {
+                let keywords = [meta.name, meta.original_name].filter(Boolean);
+                for (const kw of keywords) {
+                    const searchRes = await axios.get(`${API_BASE}/v1/api/tim-kiem?keyword=${encodeURIComponent(kw)}&limit=5`, { timeout: 4000 });
+                    const items = searchRes.data?.data?.items || [];
+                    if (items.length > 0) {
+                        slug = items[0].slug;
+                        break;
+                    }
                 }
             }
         } catch (err) {}
@@ -108,7 +112,7 @@ async function getOPhimSlugAndData(type, rawId) {
         let apiRes = await axios.get(`${API_BASE}/phim/${slug}`, { timeout: 5000 });
         if (!apiRes.data?.movie) {
             const searchKeyword = slug.replace(/-/g, ' ');
-            const searchRes = await axios.get(`${API_BASE}/v1/api/tim-kiem?keyword=${encodeURIComponent(searchKeyword)}&limit=1`, { timeout: 4000 });
+            const searchRes = await axios.get(`${API_BASE}/v1/api/tim-kiem?keyword=${encodeURIComponent(searchKeyword)}&limit=5`, { timeout: 4000 });
             const items = searchRes.data?.data?.items || [];
             if (items.length > 0) {
                 slug = items[0].slug;
@@ -130,7 +134,7 @@ app.get('/catalog/:type/:id*', async (req, res) => {
         const keyword = queryMatch ? decodeURIComponent(queryMatch[1]) : '';
 
         try {
-            const apiRes = await axios.get(`${API_BASE}/v1/api/tim-kiem?keyword=${encodeURIComponent(keyword)}&limit=100`, { timeout: 5000 });
+            const apiRes = await axios.get(`${API_BASE}/v1/api/tim-kiem?keyword=${encodeURIComponent(keyword)}&limit=200`, { timeout: 5000 });
             let items = apiRes.data?.data?.items || [];
 
             const metas = items.map(item => ({
@@ -253,17 +257,24 @@ app.get('/stream/:type/:id*', async (req, res) => {
         const episodesList = data.episodes || [];
         const streams = [];
 
-        // Gom link stream từ TẤT CẢ các server để người dùng có nhiều lựa chọn thay thế
         episodesList.forEach((server, sIdx) => {
             const serverName = server.server_name || `Server ${sIdx + 1}`;
             const serverData = server.server_data || [];
             const targetEp = serverData[epIndex] || serverData[0];
 
-            if (targetEp && targetEp.link_m3u8) {
-                streams.push({
-                    title: `Ổ Phim - ${serverName} (${targetEp.name || 'HD'})`,
-                    url: targetEp.link_m3u8
-                });
+            if (targetEp) {
+                if (targetEp.link_m3u8) {
+                    streams.push({
+                        title: `Ổ Phim - ${serverName} (M3U8)`,
+                        url: targetEp.link_m3u8
+                    });
+                }
+                if (targetEp.link_embed) {
+                    streams.push({
+                        title: `Ổ Phim - ${serverName} (Embed/Web)`,
+                        url: targetEp.link_embed
+                    });
+                }
             }
         });
 
@@ -275,4 +286,4 @@ app.get('/stream/:type/:id*', async (req, res) => {
 
 app.listen(process.env.PORT || 3000);
 module.exports = app;
-            
+        
