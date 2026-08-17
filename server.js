@@ -25,10 +25,10 @@ function formatPoster(posterUrl, thumbUrl, prefix = 'https://img.ophim.live/uplo
 }
 
 const manifest = {
-    id: 'vn.ophim.phimapi.v43',
-    version: '43.0.0',
-    name: 'Ổ Phim x PhimAPI',
-    description: 'Tích hợp song song OPhim và PhimAPI, hỗ trợ nguồn dự phòng thông minh',
+    id: 'vn.ophim.phimapi.v44',
+    version: '44.0.0',
+    name: 'Ổ Phim',
+    description: 'Ổ Phim tích hợp song song OPhim và PhimAPI, đa server, tối ưu hiển thị',
     resources: ['catalog', 'meta', 'stream'],
     types: ['movie', 'series'],
     idPrefixes: ['op_'],
@@ -36,25 +36,25 @@ const manifest = {
         {
             type: 'series',
             id: 'phim_bo',
-            name: 'Kho Phim - Phim Bộ',
+            name: 'Ổ Phim - Phim Bộ',
             extra: [{ name: 'search', isRequired: false }]
         },
         {
             type: 'movie',
             id: 'phim_le',
-            name: 'Kho Phim - Phim Lẻ',
+            name: 'Ổ Phim - Phim Lẻ',
             extra: [{ name: 'search', isRequired: false }]
         },
         {
             type: 'series',
             id: 'anime',
-            name: 'Kho Phim - Anime',
+            name: 'Ổ Phim - Anime',
             extra: [{ name: 'search', isRequired: false }]
         },
         {
             type: 'series',
             id: 'hoat_hinh_3d',
-            name: 'Kho Phim - Hoạt Hình 3D',
+            name: 'Ổ Phim - Hoạt Hình 3D',
             extra: [{ name: 'search', isRequired: false }]
         }
     ]
@@ -224,7 +224,6 @@ app.get('/meta/:type/:id*', async (req, res) => {
             } catch(e) {}
         }
 
-        // Nếu hoàn toàn không có trong kho, vẫn tạo meta giả lập từ Cinemeta để không bị lỗi trắng trang
         if (!movie) {
             try {
                 const cinemetaRes = await axios.get(`https://v3-cinemeta.strem.io/meta/${req.params.type}/${rawId.replace('.json', '')}.json`, { timeout: 3000 });
@@ -340,7 +339,6 @@ app.get('/stream/:type/:id*', async (req, res) => {
             fetchStreams(PHIMAPI_API, 'PhimAPI')
         ]);
 
-        // Nếu kho không có phim này, tự động cung cấp link dự phòng tìm kiếm web/Google để không bị lỗi "Không có nguồn phát"
         if (streams.length === 0) {
             let searchTitle = slug.replace(/-/g, ' ');
             streams.push({
