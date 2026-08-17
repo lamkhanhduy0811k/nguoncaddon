@@ -14,17 +14,19 @@ app.use((req, res, next) => {
 
 const NGUONC_API = 'https://phim.nguonc.com/api';
 
-// Giả lập Trình duyệt Chrome để không bị Nguồn C chặn
+// Bổ sung Full Header giả lập trình duyệt thật để vượt Cloudflare
 const axiosClient = axios.create({
     timeout: 10000,
     headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Accept': 'application/json, text/plain, */*'
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+        'Accept': 'application/json, text/plain, */*',
+        'Referer': 'https://phim.nguonc.com/',
+        'Origin': 'https://phim.nguonc.com'
     }
 });
 
 function fixUrl(url) {
-    if (!url) return 'https://via.placeholder.com/300x450?text=No+Image';
+    if (!url) return '';
     if (url.startsWith('//')) return 'https:' + url;
     if (url.startsWith('http://')) return url.replace('http://', 'https://');
     if (!url.startsWith('http')) return 'https://phim.nguonc.com' + (url.startsWith('/') ? '' : '/') + url;
@@ -33,74 +35,79 @@ function fixUrl(url) {
 
 const manifest = {
     id: 'com.sieutamphim.nguonc',
-    version: '1.0.4',
+    version: '1.0.5',
     name: 'Siêu Tầm Phim (Nguồn C)',
-    description: 'Xem phim Vietsub/Thuyết minh từ Nguồn C trên Nuvio / Stremio',
+    description: 'Xem phim Vietsub/Thuyết minh từ Nguồn C',
     resources: ['catalog', 'meta', 'stream'],
     types: ['movie', 'series'],
     idPrefixes: ['nguonc_'],
     catalogs: [
         {
             type: 'movie',
-            id: 'nguonc_movie_catalog',
-            name: 'Nguồn C - Phim Mới',
-            extra: [{ name: 'search', isRequired: false }]
+            id: 'nguonc_movie',
+            name: 'Nguồn C - Phim Mới'
         },
         {
             type: 'series',
-            id: 'nguonc_series_catalog',
-            name: 'Nguồn C - Phim Bộ',
-            extra: [{ name: 'search', isRequired: false }]
+            id: 'nguonc_series',
+            name: 'Nguồn C - Phim Bộ'
         }
     ]
 };
 
 app.get('/manifest.json', (req, res) => res.json(manifest));
 
-// Catalog Route
-app.get('/catalog/:type/:id*', async (req, res) => {
-    const type = req.params.type;
-    const fullPath = (req.params.id || '') + (req.params[0] || '');
-
-    let searchQuery = '';
-    if (fullPath.includes('search=')) {
-        const match = fullPath.match(/search=([^/&.]+)/);
-        if (match) searchQuery = decodeURIComponent(match[1]);
+// Hàm xử lý lấy dữ liệu chung
+async function fetchCatalog(type, searchQuery) {
+    let url = `${NGUONC_API}/films/phim-moi-cap-nhat?page=1`;
+    if (searchQuery) {
+        url = `${NGUONC_API}/films/search?keyword=${encodeURIComponent(searchQuery)}`;
     }
 
+    const response = await axiosClient.get(url);
+    const items = response.data?.items || [];
+
+    return items.map(item => ({
+        id: `nguonc_${item.slug}`,
+        type: type || 'movie',
+        name: item.name || 'Phim',
+        poster: fixUrl(item.thumb_url || item.poster_url),
+        posterShape: 'poster',
+        description: item.original_name ? `Tên gốc: ${item.original_name}` : ''
+    }));
+}
+
+// 1. Catalog chuẩn không Search
+app.get('/catalog/:type/:id.json', async (req, res) => {
     try {
-        let url = `${NGUONC_API}/films/phim-moi-cap-nhat?page=1`;
-        if (searchQuery) {
-            url = `${NGUONC_API}/films/search?keyword=${encodeURIComponent(searchQuery)}`;
-        }
-
-        const response = await axiosClient.get(url);
-        const items = response.data?.items || response.data?.data?.items || [];
-
-        const metas = items.map(item => ({
-            id: `nguonc_${item.slug}`,
-            type: type === 'series' ? 'series' : 'movie',
-            name: item.name || 'Phim mới',
-            poster: fixUrl(item.thumb_url || item.poster_url),
-            posterShape: 'poster',
-            description: item.original_name ? `Tên gốc: ${item.original_name}` : ''
-        }));
-
+        const metas = await fetchCatalog(req.params.type, null);
         res.json({ metas });
     } catch (e) {
         res.json({ metas: [] });
     }
 });
 
-// Meta Route
-app.get('/meta/:type/:id*', async (req, res) => {
+// 2. Catalog có Search hoặc Tham số phụ từ Nuvio
+app.get('/catalog/:type/:id/:extra.json', async (req, res) => {
     try {
-        let rawId = req.params.id + (req.params[0] || '');
-        rawId = rawId.replace('.json', '');
-        const slug = rawId.replace('nguonc_', '');
+        let searchQuery = '';
+        if (req.params.extra.includes('search=')) {
+            const match = req.params.extra.match(/search=([^&]+)/);
+            if (match) searchQuery = decodeURIComponent(match[1]);
+        }
+        const metas = await fetchCatalog(req.params.type, searchQuery);
+        res.json({ metas });
+    } catch (e) {
+        res.json({ metas: [] });
+    }
+});
 
+// 3. Chi tiết phim
+app.get('/meta/:type/:id.json', async (req, res) => {
+    try {
+        const slug = req.params.id.replace('.json', '').replace('nguonc_', '');
         const response = await axiosClient.get(`${NGUONC_API}/film/${slug}`);
-        const movie = response.data?.movie || response.data?.data?.movie;
+        const movie = response.data?.movie;
 
         if (!movie) return res.json({ meta: null });
 
@@ -120,19 +127,16 @@ app.get('/meta/:type/:id*', async (req, res) => {
     }
 });
 
-// Stream Route
-app.get('/stream/:type/:id*', async (req, res) => {
+// 4. Link xem phim
+app.get('/stream/:type/:id.json', async (req, res) => {
     try {
-        let rawId = req.params.id + (req.params[0] || '');
-        rawId = rawId.replace('.json', '');
-        const cleanId = rawId.replace('nguonc_', '');
-
+        const cleanId = req.params.id.replace('.json', '').replace('nguonc_', '');
         const parts = cleanId.split(':');
         const slug = parts[0];
         const epIndex = parts[1] ? parseInt(parts[1]) - 1 : 0;
 
         const response = await axiosClient.get(`${NGUONC_API}/film/${slug}`);
-        const movie = response.data?.movie || response.data?.data?.movie;
+        const movie = response.data?.movie;
         const episodes = movie?.episodes?.[0]?.items || [];
         const ep = episodes[epIndex] || episodes[0];
 
@@ -154,3 +158,4 @@ app.get('/stream/:type/:id*', async (req, res) => {
 
 const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+    
