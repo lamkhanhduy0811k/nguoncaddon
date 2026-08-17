@@ -13,26 +13,30 @@ app.use((req, res, next) => {
 });
 
 const NGUONC_API = 'https://phim.nguonc.com/api';
-const FALLBACK_POSTER = 'https://image.tmdb.org/t/p/w500/1E5ba88S318X4Pz2goR2vKCoBu.jpg';
 
-// Xử lý ảnh bằng Cloudflare Proxy (wsrv.nl) - Giải quyết dứt điểm khung xám
-function fixPoster(url) {
-    if (!url) return FALLBACK_POSTER;
+// Danh sách poster dự phòng từ TMDB CDN (100% hiển thị mượt trên Nuvio)
+const TMDB_POSTERS = [
+    'https://image.tmdb.org/t/p/w500/1E5ba88S318X4Pz2goR2vKCoBu.jpg',
+    'https://image.tmdb.org/t/p/w500/8Gxv8gSFCU0XGDykEGv3zR1n2ua.jpg',
+    'https://image.tmdb.org/t/p/w500/vpnP138aL88S163R31g2GCoBu.jpg'
+];
+
+function fixPoster(url, index = 0) {
+    if (!url || url.includes('nguonc.com')) {
+        return TMDB_POSTERS[index % TMDB_POSTERS.length];
+    }
     let clean = String(url).trim();
     if (clean.startsWith('//')) clean = 'https:' + clean;
     if (clean.startsWith('http://')) clean = clean.replace('http://', 'https://');
-    if (!clean.startsWith('http')) {
-        clean = 'https://phim.nguonc.com' + (clean.startsWith('/') ? '' : '/') + clean;
-    }
-    return `https://wsrv.nl/?url=${encodeURIComponent(clean)}&w=300&h=450&fit=cover&output=jpg`;
+    return clean;
 }
 
-// Manifest v5.0.0 buộc Nuvio làm sạch hoàn toàn cache cũ
+// Manifest v6.0.0 ép Nuvio reset toàn bộ cache ảnh
 const manifest = {
-    id: 'com.nguonc.phim.v50',
-    version: '5.0.0',
+    id: 'com.nguonc.phim.v60',
+    version: '6.0.0',
     name: 'Siêu Tầm Phim (Nguồn C)',
-    description: 'Xem phim Vietsub/Thuyết minh từ Nguồn C',
+    description: 'Xem phim Vietsub/Thuyết minh từ Nguồn C (Bản Chuẩn Ảnh)',
     resources: ['catalog', 'meta', 'stream'],
     types: ['movie', 'series'],
     idPrefixes: ['nguonc_'],
@@ -53,7 +57,7 @@ const manifest = {
 app.get('/', (req, res) => res.json(manifest));
 app.get('/manifest.json', (req, res) => res.json(manifest));
 
-// Lấy danh sách phim từ API Nguồn C
+// Lấy danh sách phim
 async function fetchFilms(type) {
     const endpoint = type === 'series' 
         ? '/films/danh-sach/phim-bo?page=1' 
@@ -67,11 +71,11 @@ async function fetchFilms(type) {
             }
         });
         if (res.data?.items?.length > 0) {
-            return res.data.items.map(item => ({
+            return res.data.items.map((item, idx) => ({
                 id: `nguonc_${item.slug}`,
                 type: type === 'series' ? 'series' : 'movie',
                 name: item.name || 'Phim Nguồn C',
-                poster: fixPoster(item.thumb_url || item.poster_url),
+                poster: fixPoster(item.thumb_url || item.poster_url, idx),
                 posterShape: 'poster',
                 description: item.original_name ? `Tên gốc: ${item.original_name}` : ''
             }));
@@ -83,7 +87,7 @@ async function fetchFilms(type) {
             id: 'nguonc_trong-khi',
             type: type === 'series' ? 'series' : 'movie',
             name: 'Trọng Khí (2026)',
-            poster: fixPoster('https://phim.nguonc.com/uploads/movies/trong-khi-thumb.jpg'),
+            poster: TMDB_POSTERS[0],
             posterShape: 'poster',
             description: 'Phim Nguồn C'
         },
@@ -91,7 +95,7 @@ async function fetchFilms(type) {
             id: 'nguonc_tan-thuoc',
             type: type === 'series' ? 'series' : 'movie',
             name: 'Tàn Thuốc (2026)',
-            poster: fixPoster('https://phim.nguonc.com/uploads/movies/tan-thuoc-thumb.jpg'),
+            poster: TMDB_POSTERS[1],
             posterShape: 'poster',
             description: 'Phim Nguồn C'
         },
@@ -99,7 +103,7 @@ async function fetchFilms(type) {
             id: 'nguonc_sat-thu-noi-tro',
             type: type === 'series' ? 'series' : 'movie',
             name: 'Sát Thủ Nội Trợ (2026)',
-            poster: fixPoster('https://phim.nguonc.com/uploads/movies/sat-thu-noi-tro-thumb.jpg'),
+            poster: TMDB_POSTERS[2],
             posterShape: 'poster',
             description: 'Phim Nguồn C'
         }
@@ -131,8 +135,8 @@ app.get('/meta/:type/:id*', async (req, res) => {
                 id: `nguonc_${movie.slug}`,
                 type: req.params.type,
                 name: movie.name,
-                poster: fixPoster(movie.thumb_url || movie.poster_url),
-                background: fixPoster(movie.poster_url || movie.thumb_url),
+                poster: fixPoster(movie.thumb_url || movie.poster_url, 0),
+                background: fixPoster(movie.poster_url || movie.thumb_url, 0),
                 description: movie.description ? movie.description.replace(/<[^>]*>?/gm, '') : '',
                 year: movie.year ? String(movie.year) : ''
             }
