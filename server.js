@@ -15,7 +15,6 @@ app.use((req, res, next) => {
 const OPHIM_API = 'https://ophim1.com';
 const PHIMAPI_API = 'https://phimapi.com';
 
-// Hàm xử lý ảnh chung cho cả 2 nguồn (ảnh của PhimAPI thường ở phimimg.com)
 function formatPoster(posterUrl, thumbUrl, prefix = 'https://img.ophim.live/uploads/movies/') {
     let img = posterUrl || thumbUrl || '';
     if (!img) return '';
@@ -26,10 +25,10 @@ function formatPoster(posterUrl, thumbUrl, prefix = 'https://img.ophim.live/uplo
 }
 
 const manifest = {
-    id: 'vn.ophim.phimapi.v42',
-    version: '42.0.0',
+    id: 'vn.ophim.phimapi.v43',
+    version: '43.0.0',
     name: 'Ổ Phim x PhimAPI',
-    description: 'Tích hợp song song 2 kho dữ liệu phim lớn nhất, nhân đôi số lượng server và nguồn phát',
+    description: 'Tích hợp song song OPhim và PhimAPI, hỗ trợ nguồn dự phòng thông minh',
     resources: ['catalog', 'meta', 'stream'],
     types: ['movie', 'series'],
     idPrefixes: ['op_'],
@@ -64,7 +63,6 @@ const manifest = {
 app.get('/', (req, res) => res.json(manifest));
 app.get('/manifest.json', (req, res) => res.json(manifest));
 
-// Load dữ liệu phân trang (Dùng OPhim làm nguồn khung hiển thị chính)
 async function fetchMultiplePages(typePath, maxPages = 15) {
     let allItems = [];
     let promises = [];
@@ -82,16 +80,17 @@ async function fetchMultiplePages(typePath, maxPages = 15) {
     return allItems;
 }
 
-// Phân giải ID thông minh quét từ cả 2 nguồn
-async function resolveSlug(type, rawId) {
+async function resolveSlugAndMeta(type, rawId) {
     let cleanId = rawId.replace('.json', '');
     let slug = cleanId.startsWith('op_') ? cleanId.replace('op_', '').split(':')[0] : '';
+    let movieName = '';
 
     if (!slug) {
         try {
             const cinemetaRes = await axios.get(`https://v3-cinemeta.strem.io/meta/${type}/${cleanId}.json`, { timeout: 3000 });
             const meta = cinemetaRes.data?.meta;
             if (meta) {
+                movieName = meta.name || '';
                 let keywords = [meta.name, meta.original_name].filter(Boolean);
                 for (const kw of keywords) {
                     const [ophimSearch, phimapiSearch] = await Promise.allSettled([
@@ -100,10 +99,10 @@ async function resolveSlug(type, rawId) {
                     ]);
 
                     if (ophimSearch.status === 'fulfilled' && ophimSearch.value.data?.data?.items?.length > 0) {
-                        return ophimSearch.value.data.data.items[0].slug;
+                        return { slug: ophimSearch.value.data.data.items[0].slug, movieName };
                     }
                     if (phimapiSearch.status === 'fulfilled' && phimapiSearch.value.data?.data?.items?.length > 0) {
-                        return phimapiSearch.value.data.data.items[0].slug;
+                        return { slug: phimapiSearch.value.data.data.items[0].slug, movieName };
                     }
                 }
             }
@@ -111,39 +110,13 @@ async function resolveSlug(type, rawId) {
         slug = cleanId.split(':')[0];
     }
 
-    try {
-        const [testOphim, testPhimApi] = await Promise.allSettled([
-            axios.get(`${OPHIM_API}/phim/${slug}`, { timeout: 3000 }),
-            axios.get(`${PHIMAPI_API}/phim/${slug}`, { timeout: 3000 })
-        ]);
-
-        if ((testOphim.status === 'fulfilled' && testOphim.value.data?.movie) ||
-            (testPhimApi.status === 'fulfilled' && testPhimApi.value.data?.movie)) {
-            return slug;
-        }
-
-        let searchKeyword = slug.replace(/-/g, ' ');
-        const [fallbackOphim, fallbackPhimApi] = await Promise.allSettled([
-            axios.get(`${OPHIM_API}/v1/api/tim-kiem?keyword=${encodeURIComponent(searchKeyword)}&limit=3`, { timeout: 3000 }),
-            axios.get(`${PHIMAPI_API}/v1/api/tim-kiem?keyword=${encodeURIComponent(searchKeyword)}&limit=3`, { timeout: 3000 })
-        ]);
-
-        if (fallbackOphim.status === 'fulfilled' && fallbackOphim.value.data?.data?.items?.length > 0) {
-            return fallbackOphim.value.data.data.items[0].slug;
-        }
-        if (fallbackPhimApi.status === 'fulfilled' && fallbackPhimApi.value.data?.data?.items?.length > 0) {
-            return fallbackPhimApi.value.data.data.items[0].slug;
-        }
-    } catch (e) {}
-
-    return slug;
+    return { slug, movieName };
 }
 
 app.get('/catalog/:type/:id*', async (req, res) => {
     let rawId = req.params.id + (req.params[0] || '');
     rawId = rawId.replace('.json', '');
 
-    // Nếu là Search: Quét song song và gộp cả OPhim + PhimAPI
     if (rawId.includes('search=')) {
         const queryMatch = rawId.match(/search=([^&]+)/);
         const keyword = queryMatch ? decodeURIComponent(queryMatch[1]) : '';
@@ -183,7 +156,6 @@ app.get('/catalog/:type/:id*', async (req, res) => {
         }
     }
 
-    // Nếu load danh mục: Giữ nguyên truy vấn Ophim
     try {
         let items = [];
         if (rawId.startsWith('phim_le')) {
@@ -227,25 +199,23 @@ app.get('/catalog/:type/:id*', async (req, res) => {
 app.get('/meta/:type/:id*', async (req, res) => {
     try {
         let rawId = req.params.id + (req.params[0] || '');
-        const slug = await resolveSlug(req.params.type, rawId);
+        const { slug, movieName } = await resolveSlugAndMeta(req.params.type, rawId);
 
         let movie = null;
         let episodesList = [];
         let imagePrefix = 'https://img.ophim.live/uploads/movies/';
 
-        // Check OPhim trước
         try {
-            let resO = await axios.get(`${OPHIM_API}/phim/${slug}`, { timeout: 4000 });
+            let resO = await axios.get(`${OPHIM_API}/phim/${slug}`, { timeout: 3000 });
             if (resO.data?.movie) {
                 movie = resO.data.movie;
                 episodesList = resO.data.episodes || [];
             }
         } catch(e) {}
 
-        // Nếu hụt thì check PhimAPI
         if (!movie) {
             try {
-                let resP = await axios.get(`${PHIMAPI_API}/phim/${slug}`, { timeout: 4000 });
+                let resP = await axios.get(`${PHIMAPI_API}/phim/${slug}`, { timeout: 3000 });
                 if (resP.data?.movie) {
                     movie = resP.data.movie;
                     episodesList = resP.data.episodes || [];
@@ -254,7 +224,36 @@ app.get('/meta/:type/:id*', async (req, res) => {
             } catch(e) {}
         }
 
-        if (!movie) return res.json({ meta: null });
+        // Nếu hoàn toàn không có trong kho, vẫn tạo meta giả lập từ Cinemeta để không bị lỗi trắng trang
+        if (!movie) {
+            try {
+                const cinemetaRes = await axios.get(`https://v3-cinemeta.strem.io/meta/${req.params.type}/${rawId.replace('.json', '')}.json`, { timeout: 3000 });
+                const meta = cinemetaRes.data?.meta;
+                if (meta) {
+                    return res.json({
+                        meta: {
+                            id: rawId.replace('.json', ''),
+                            type: req.params.type,
+                            name: meta.name,
+                            poster: meta.poster,
+                            background: meta.background,
+                            description: meta.description || 'Không có mô tả.',
+                            year: String(meta.year || '2026'),
+                            releaseInfo: String(meta.year || '2026'),
+                            videos: [{
+                                id: `${rawId.replace('.json', '')}:1`,
+                                title: 'Tập 1 (Tìm kiếm trực tuyến)',
+                                thumbnail: meta.poster,
+                                released: new Date().toISOString(),
+                                season: 1,
+                                episode: 1
+                            }]
+                        }
+                    });
+                }
+            } catch(err) {}
+            return res.json({ meta: null });
+        }
 
         let rawEpisodes = [];
         for (const s of episodesList) {
@@ -305,13 +304,12 @@ app.get('/stream/:type/:id*', async (req, res) => {
         const baseId = parts[0];
         const epIndex = parts[1] ? parseInt(parts[1]) - 1 : 0;
 
-        const slug = await resolveSlug(req.params.type, baseId);
+        const { slug, movieName } = await resolveSlugAndMeta(req.params.type, baseId);
         const streams = [];
 
-        // Trích xuất link từ 1 API bất kỳ
         const fetchStreams = async (apiBase, sourceName) => {
             try {
-                let apiRes = await axios.get(`${apiBase}/phim/${slug}`, { timeout: 4000 });
+                let apiRes = await axios.get(`${apiBase}/phim/${slug}`, { timeout: 3000 });
                 const episodesList = apiRes.data?.episodes || [];
 
                 episodesList.forEach((server, sIdx) => {
@@ -322,13 +320,13 @@ app.get('/stream/:type/:id*', async (req, res) => {
                     if (targetEp) {
                         if (targetEp.link_m3u8) {
                             streams.push({
-                                title: `${sourceName} - ${serverName} (M3U8)`,
+                                title: `Ổ Phim - ${sourceName} ${serverName} (M3U8)`,
                                 url: targetEp.link_m3u8
                             });
                         }
                         if (targetEp.link_embed) {
                             streams.push({
-                                title: `${sourceName} - ${serverName} (Embed)`,
+                                title: `Ổ Phim - ${sourceName} ${serverName} (Embed)`,
                                 url: targetEp.link_embed
                             });
                         }
@@ -337,11 +335,19 @@ app.get('/stream/:type/:id*', async (req, res) => {
             } catch(e) {}
         };
 
-        // GỌI CHẠY SONG SONG CẢ 2 NGUỒN CÙNG LÚC
         await Promise.all([
             fetchStreams(OPHIM_API, 'OPhim'),
             fetchStreams(PHIMAPI_API, 'PhimAPI')
         ]);
+
+        // Nếu kho không có phim này, tự động cung cấp link dự phòng tìm kiếm web/Google để không bị lỗi "Không có nguồn phát"
+        if (streams.length === 0) {
+            let searchTitle = slug.replace(/-/g, ' ');
+            streams.push({
+                title: `Ổ Phim - 🔍 Không có sẵn nguồn (Bấm để tìm Google)`,
+                url: `https://www.google.com/search?q=${encodeURIComponent(searchTitle + ' vietsub')}`
+            });
+        }
 
         return res.json({ streams });
     } catch (e) {
@@ -351,4 +357,4 @@ app.get('/stream/:type/:id*', async (req, res) => {
 
 app.listen(process.env.PORT || 3000);
 module.exports = app;
-                            
+            
