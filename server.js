@@ -4,7 +4,6 @@ const axios = require('axios');
 
 const app = express();
 
-// Bật CORS toàn diện cho Nuvio và Web Player
 app.use(cors());
 app.use((req, res, next) => {
     res.setHeader('Access-Control-Allow-Origin', '*');
@@ -15,9 +14,17 @@ app.use((req, res, next) => {
 
 const NGUONC_API = 'https://phim.nguonc.com/api';
 
-// Chuẩn hóa link ảnh sang HTTPS để Nuvio không bị chặn
+// Giả lập Trình duyệt Chrome để không bị Nguồn C chặn
+const axiosClient = axios.create({
+    timeout: 10000,
+    headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'application/json, text/plain, */*'
+    }
+});
+
 function fixUrl(url) {
-    if (!url) return '';
+    if (!url) return 'https://via.placeholder.com/300x450?text=No+Image';
     if (url.startsWith('//')) return 'https:' + url;
     if (url.startsWith('http://')) return url.replace('http://', 'https://');
     if (!url.startsWith('http')) return 'https://phim.nguonc.com' + (url.startsWith('/') ? '' : '/') + url;
@@ -26,7 +33,7 @@ function fixUrl(url) {
 
 const manifest = {
     id: 'com.sieutamphim.nguonc',
-    version: '1.0.3',
+    version: '1.0.4',
     name: 'Siêu Tầm Phim (Nguồn C)',
     description: 'Xem phim Vietsub/Thuyết minh từ Nguồn C trên Nuvio / Stremio',
     resources: ['catalog', 'meta', 'stream'],
@@ -48,14 +55,12 @@ const manifest = {
     ]
 };
 
-app.get('/manifest.json', (req, res) => {
-    res.json(manifest);
-});
+app.get('/manifest.json', (req, res) => res.json(manifest));
 
-// 1. Xử lý Catalog (Bắt mọi đường dẫn mở rộng từ Nuvio)
+// Catalog Route
 app.get('/catalog/:type/:id*', async (req, res) => {
-    const { type } = req.params;
-    const fullPath = req.params[0] || '';
+    const type = req.params.type;
+    const fullPath = (req.params.id || '') + (req.params[0] || '');
 
     let searchQuery = '';
     if (fullPath.includes('search=')) {
@@ -69,13 +74,13 @@ app.get('/catalog/:type/:id*', async (req, res) => {
             url = `${NGUONC_API}/films/search?keyword=${encodeURIComponent(searchQuery)}`;
         }
 
-        const response = await axios.get(url, { timeout: 8000 });
-        const items = response.data.items || [];
+        const response = await axiosClient.get(url);
+        const items = response.data?.items || response.data?.data?.items || [];
 
         const metas = items.map(item => ({
             id: `nguonc_${item.slug}`,
             type: type === 'series' ? 'series' : 'movie',
-            name: item.name,
+            name: item.name || 'Phim mới',
             poster: fixUrl(item.thumb_url || item.poster_url),
             posterShape: 'poster',
             description: item.original_name ? `Tên gốc: ${item.original_name}` : ''
@@ -87,15 +92,15 @@ app.get('/catalog/:type/:id*', async (req, res) => {
     }
 });
 
-// 2. Xử lý Meta (Chi tiết phim)
+// Meta Route
 app.get('/meta/:type/:id*', async (req, res) => {
     try {
         let rawId = req.params.id + (req.params[0] || '');
         rawId = rawId.replace('.json', '');
         const slug = rawId.replace('nguonc_', '');
 
-        const response = await axios.get(`${NGUONC_API}/film/${slug}`, { timeout: 8000 });
-        const movie = response.data.movie;
+        const response = await axiosClient.get(`${NGUONC_API}/film/${slug}`);
+        const movie = response.data?.movie || response.data?.data?.movie;
 
         if (!movie) return res.json({ meta: null });
 
@@ -115,7 +120,7 @@ app.get('/meta/:type/:id*', async (req, res) => {
     }
 });
 
-// 3. Xử lý Stream (Link xem phim)
+// Stream Route
 app.get('/stream/:type/:id*', async (req, res) => {
     try {
         let rawId = req.params.id + (req.params[0] || '');
@@ -126,8 +131,8 @@ app.get('/stream/:type/:id*', async (req, res) => {
         const slug = parts[0];
         const epIndex = parts[1] ? parseInt(parts[1]) - 1 : 0;
 
-        const response = await axios.get(`${NGUONC_API}/film/${slug}`, { timeout: 8000 });
-        const movie = response.data.movie;
+        const response = await axiosClient.get(`${NGUONC_API}/film/${slug}`);
+        const movie = response.data?.movie || response.data?.data?.movie;
         const episodes = movie?.episodes?.[0]?.items || [];
         const ep = episodes[epIndex] || episodes[0];
 
