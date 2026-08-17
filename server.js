@@ -12,18 +12,19 @@ app.use((req, res, next) => {
     next();
 });
 
-const API_BASE = 'https://nguonc.cc/api';
+const API_BASE = 'https://ophim1.com';
 
 function formatPoster(url) {
     if (!url) return 'https://image.tmdb.org/t/p/w500/1E5ba88S318X4Pz2goR2vKCoBu.jpg';
-    return url;
+    if (url.startsWith('http')) return url;
+    return `https://img.ophim.cc/uploads/movies/${url}`;
 }
 
 const manifest = {
-    id: 'vn.nguonc.official.v20',
-    version: '20.0.0',
+    id: 'vn.nguonc.official.v21',
+    version: '21.0.0',
     name: 'Nguồn C',
-    description: 'Kho phim độc quyền từ Nguồn C (nguonc.cc)',
+    description: 'Kho phim độc quyền chất lượng cao',
     resources: ['catalog', 'meta', 'stream'],
     types: ['movie', 'series'],
     idPrefixes: ['nc_'],
@@ -55,16 +56,16 @@ app.get('/catalog/:type/:id*', async (req, res) => {
         const keyword = queryMatch ? decodeURIComponent(queryMatch[1]) : '';
 
         try {
-            const apiRes = await axios.get(`${API_BASE}/films/search?keyword=${encodeURIComponent(keyword)}`, { timeout: 4000 });
-            const items = apiRes.data?.items || apiRes.data?.data?.items || [];
+            const apiRes = await axios.get(`${API_BASE}/v1/api/tim-kiem?keyword=${encodeURIComponent(keyword)}&limit=50`, { timeout: 5000 });
+            const items = apiRes.data?.data?.items || [];
             const metas = items.map(item => ({
                 id: `nc_${item.slug}`,
                 type: req.params.type,
                 name: item.name || item.title,
                 poster: formatPoster(item.poster_url || item.thumb_url),
                 posterShape: 'poster',
-                releaseInfo: `${item.year || '2026'} • ${item.current_episode || item.episode_current || 'Full'}`,
-                description: item.original_name ? `Tên gốc: ${item.original_name}` : ''
+                releaseInfo: `${item.year || '2026'} • ${item.episode_current || 'Full'}`,
+                description: item.origin_name ? `Tên gốc: ${item.origin_name}` : ''
             }));
             return res.json({ metas });
         } catch (e) {
@@ -78,16 +79,16 @@ app.get('/catalog/:type/:id*', async (req, res) => {
     }
 
     try {
-        const apiRes = await axios.get(`${API_BASE}/films/${typePath}`, { timeout: 4000 });
-        const items = apiRes.data?.items || apiRes.data?.data?.items || [];
+        const apiRes = await axios.get(`${API_BASE}/v1/api/danh-sach/${typePath}?limit=50`, { timeout: 5000 });
+        const items = apiRes.data?.data?.items || [];
         const metas = items.map(item => ({
             id: `nc_${item.slug}`,
             type: req.params.type,
             name: item.name || item.title,
             poster: formatPoster(item.poster_url || item.thumb_url),
             posterShape: 'poster',
-            releaseInfo: `${item.year || '2026'} • ${item.current_episode || item.episode_current || 'Full'}`,
-            description: item.original_name ? `Tên gốc: ${item.original_name}` : ''
+            releaseInfo: `${item.year || '2026'} • ${item.episode_current || 'Full'}`,
+            description: item.origin_name ? `Tên gốc: ${item.origin_name}` : ''
         }));
         return res.json({ metas });
     } catch (e) {
@@ -100,10 +101,10 @@ app.get('/meta/:type/:id*', async (req, res) => {
         let rawId = req.params.id + (req.params[0] || '');
         const slug = rawId.replace('.json', '').replace('nc_', '');
 
-        const apiRes = await axios.get(`${API_BASE}/film/${slug}`, { timeout: 4000 });
-        const movie = apiRes.data?.movie || apiRes.data?.data?.item || apiRes.data?.data;
-        const episodesList = movie?.episodes || apiRes.data?.episodes || [];
-        const rawEpisodes = episodesList[0]?.items || episodesList[0]?.server_data || [];
+        const apiRes = await axios.get(`${API_BASE}/phim/${slug}`, { timeout: 5000 });
+        const movie = apiRes.data?.movie;
+        const episodesList = apiRes.data?.episodes || [];
+        const rawEpisodes = episodesList[0]?.server_data || [];
 
         if (!movie) return res.json({ meta: null });
 
@@ -131,9 +132,9 @@ app.get('/meta/:type/:id*', async (req, res) => {
                 name: movie.name || movie.title,
                 poster: formatPoster(movie.poster_url || movie.thumb_url),
                 background: movieThumb,
-                description: movie.description ? movie.description.replace(/<[^>]*>?/gm, '') : '',
+                description: movie.content ? movie.content.replace(/<[^>]*>?/gm, '') : '',
                 year: String(movie.year || '2026'),
-                releaseInfo: `${movie.year || '2026'} • ${movie.current_episode || movie.episode_current || 'Full'}`,
+                releaseInfo: `${movie.year || '2026'} • ${movie.episode_current || 'Full'}`,
                 videos: videos.length > 0 ? videos : undefined
             }
         });
@@ -151,28 +152,25 @@ app.get('/stream/:type/:id*', async (req, res) => {
         const slug = parts[0];
         const epIndex = parts[1] ? parseInt(parts[1]) - 1 : 0;
 
-        const apiRes = await axios.get(`${API_BASE}/film/${slug}`, { timeout: 4000 });
-        const movie = apiRes.data?.movie || apiRes.data?.data?.item || apiRes.data?.data;
-        const episodesList = movie?.episodes || apiRes.data?.episodes || [];
-        const rawEpisodes = episodesList[0]?.items || episodesList[0]?.server_data || [];
+        const apiRes = await axios.get(`${API_BASE}/phim/${slug}`, { timeout: 5000 });
+        const episodesList = apiRes.data?.episodes || [];
+        const rawEpisodes = episodesList[0]?.server_data || [];
 
         const targetEp = rawEpisodes[epIndex] || rawEpisodes[0];
-        if (!targetEp) return res.json({ streams: [] });
-
-        const streamUrl = targetEp.link || targetEp.link_m3u8 || targetEp.m3u8;
-        if (!streamUrl) return res.json({ streams: [] });
+        if (!targetEp || !targetEp.link_m3u8) return res.json({ streams: [] });
 
         return res.json({
             streams: [
                 {
                     title: `Nguồn C - ${targetEp.name || 'Full'}`,
-                    url: streamUrl
+                    url: targetEp.link_m3u8
                 }
             ]
         });
     } catch (e) {
-        res.json({ streams: [] });
+        return res.json({ streams: [] });
     }
 });
 
 module.exports = app;
+            
