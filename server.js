@@ -14,32 +14,16 @@ app.use((req, res, next) => {
 
 const API_BASE = 'https://ophim1.com';
 
-/**
- * Hàm chuẩn hóa ảnh chuyên nghiệp
- * Đảm bảo trả về đường dẫn tuyệt đối, sạch sẽ và tương thích hoàn toàn với Nuvio
- */
 function formatPoster(url) {
-    if (!url || typeof url !== 'string' || url.trim() === '') {
-        return 'https://image.tmdb.org/t/p/w500/1E5ba88S318X4Pz2goR2vKCoBu.jpg';
+    if (!url) return 'https://image.tmdb.org/t/p/w500/1E5ba88S318X4Pz2goR2vKCoBu.jpg';
+    if (url.startsWith('http://') || url.startsWith('https://')) {
+        return url;
     }
-    
-    let cleanUrl = url.trim();
-    
-    // Nếu URL đã là dạng http/https hoàn chỉnh
-    if (cleanUrl.startsWith('http://') || cleanUrl.startsWith('https://')) {
-        cleanUrl = cleanUrl.replace('http://', 'https://');
-        cleanUrl = cleanUrl.replace('img.ophim.cc', 'img.phimimg.com');
-        cleanUrl = cleanUrl.replace('img.ophim1.com', 'img.phimimg.com');
-        return cleanUrl;
+    const cleanUrl = url.replace(/^\//, '');
+    if (cleanUrl.startsWith('uploads/')) {
+        return `https://img.ophim1.com/${cleanUrl}`;
     }
-    
-    // Nếu là đường dẫn tương đối từ API nguồn
-    cleanUrl = cleanUrl.replace(/^\/+/, '');
-    if (!cleanUrl.startsWith('uploads/')) {
-        cleanUrl = `uploads/movies/${cleanUrl}`;
-    }
-    
-    return `https://img.phimimg.com/${cleanUrl}`;
+    return `https://img.ophim1.com/uploads/movies/${cleanUrl}`;
 }
 
 function getBestPoster(item) {
@@ -53,10 +37,10 @@ function getBestPoster(item) {
 }
 
 const manifest = {
-    id: 'vn.nguonc.official.v41',
-    version: '41.0.0',
-    name: 'Nguồn C (Standard)',
-    description: 'Kho phim độc quyền đa dạng, đầy đủ chi tiết',
+    id: 'vn.nguonc.official.v26',
+    version: '26.0.0',
+    name: 'Nguồn C',
+    description: 'Kho phim độc quyền đa dạng, poster chuẩn rạp',
     resources: ['catalog', 'meta', 'stream'],
     types: ['movie', 'series'],
     idPrefixes: ['nc_'],
@@ -91,7 +75,7 @@ const manifest = {
 app.get('/', (req, res) => res.json(manifest));
 app.get('/manifest.json', (req, res) => res.json(manifest));
 
-async function fetchMultiplePages(typePath, maxPages = 15) {
+async function fetchMultiplePages(typePath, maxPages = 20) {
     let allItems = [];
     let promises = [];
     for (let p = 1; p <= maxPages; p++) {
@@ -137,25 +121,26 @@ app.get('/catalog/:type/:id*', async (req, res) => {
     try {
         let items = [];
         if (rawId.startsWith('phim_le')) {
-            items = await fetchMultiplePages('phim-le', 20);
+            items = await fetchMultiplePages('phim-le', 25);
         } else if (rawId.startsWith('anime')) {
-            const rawAnime = await fetchMultiplePages('hoat-hinh', 30);
+            // Tăng số trang lên 40 để Anime có số lượng phim khủng ngang ngửa các mục khác
+            const rawAnime = await fetchMultiplePages('hoat-hinh', 40);
             items = rawAnime.filter(i => {
                 const name = (i.name + ' ' + (i.origin_name || '')).toLowerCase();
                 const countrySlug = i.country?.map(c => c.slug).join(' ') || '';
-                return name.includes('nhật') || name.includes('japan') || countrySlug.includes('nhat-ban');
+                return name.includes('nhật') || name.includes('japan') || countrySlug.includes('nhat-ban') || i.category?.some(c => c.slug === 'hoat-hinh' && (c.name?.toLowerCase().includes('nhật') || c.slug?.includes('nhat')));
             });
-            if (items.length < 30) items = rawAnime;
+            if (items.length < 50) items = rawAnime;
         } else if (rawId.startsWith('hoat_hinh_3d')) {
-            const rawHH = await fetchMultiplePages('hoat-hinh', 30);
+            const rawHH = await fetchMultiplePages('hoat-hinh', 35);
             items = rawHH.filter(i => {
                 const name = (i.name + ' ' + (i.origin_name || '')).toLowerCase();
                 const countrySlug = i.country?.map(c => c.slug).join(' ') || '';
                 return name.includes('trung quốc') || name.includes('china') || name.includes('3d') || countrySlug.includes('trung-quoc');
             });
-            if (items.length < 30) items = rawHH;
+            if (items.length < 50) items = rawHH;
         } else {
-            items = await fetchMultiplePages('phim-bo', 20);
+            items = await fetchMultiplePages('phim-bo', 25);
         }
 
         const metas = items.map(item => ({
@@ -241,7 +226,7 @@ app.get('/stream/:type/:id*', async (req, res) => {
             streams: [
                 {
                     title: `Nguồn C - ${targetEp.name || 'Full'}`,
-                    url: target_link = targetEp.link_m3u8
+                    url: targetEp.link_m3u8
                 }
             ]
         });
@@ -250,6 +235,4 @@ app.get('/stream/:type/:id*', async (req, res) => {
     }
 });
 
-app.listen(process.env.PORT || 3000);
 module.exports = app;
-                
