@@ -25,10 +25,10 @@ function formatPoster(posterUrl, thumbUrl, prefix = 'https://img.ophim.live/uplo
 }
 
 const manifest = {
-    id: 'vn.ophim.phimapi.v52',
-    version: '52.0.0',
+    id: 'vn.ophim.phimapi.v53',
+    version: '53.0.0',
     name: 'Ổ Phim',
-    description: 'Ổ Phim tối ưu chỉ dùng nguồn M3U8 trực tiếp, không lỗi embed',
+    description: 'Ổ Phim tổng hợp kho tàng hơn 500 phim mỗi mục',
     resources: ['catalog', 'meta', 'stream'],
     types: ['movie', 'series'],
     idPrefixes: ['op_'],
@@ -63,16 +63,21 @@ const manifest = {
 app.get('/', (req, res) => res.json(manifest));
 app.get('/manifest.json', (req, res) => res.json(manifest));
 
-async function fetchFastPages(typePath) {
+// Quét 25 trang đầu (khoảng 500+ phim mỗi mục) đồng thời để tải nhanh
+async function fetchManyPages(typePath) {
     let allItems = [];
-    try {
-        const [res1, res2] = await Promise.allSettled([
-            axios.get(`${OPHIM_API}/v1/api/danh-sach/${typePath}?page=1`, { timeout: 2000 }),
-            axios.get(`${OPHIM_API}/v1/api/danh-sach/${typePath}?page=2`, { timeout: 2000 })
-        ]);
-        if (res1.status === 'fulfilled') allItems = allItems.concat(res1.value.data?.data?.items || []);
-        if (res2.status === 'fulfilled') allItems = allItems.concat(res2.value.data?.data?.items || []);
-    } catch(e) {}
+    let promises = [];
+    for (let p = 1; p <= 25; p++) {
+        promises.push(
+            axios.get(`${OPHIM_API}/v1/api/danh-sach/${typePath}?page=${p}`, { timeout: 3500 })
+                .then(res => res.data?.data?.items || [])
+                .catch(() => [])
+        );
+    }
+    const results = await Promise.all(promises);
+    results.forEach(items => {
+        allItems = allItems.concat(items);
+    });
     return allItems;
 }
 
@@ -116,8 +121,8 @@ app.get('/catalog/:type/:id*', async (req, res) => {
             };
 
             const [ophimRes, phimapiRes] = await Promise.allSettled([
-                axios.get(`${OPHIM_API}/v1/api/tim-kiem?keyword=${encodeURIComponent(keyword)}&limit=15`, { timeout: 2000 }),
-                axios.get(`${PHIMAPI_API}/v1/api/tim-kiem?keyword=${encodeURIComponent(keyword)}&limit=15`, { timeout: 2000 })
+                axios.get(`${OPHIM_API}/v1/api/tim-kiem?keyword=${encodeURIComponent(keyword)}&limit=30`, { timeout: 2500 }),
+                axios.get(`${PHIMAPI_API}/v1/api/tim-kiem?keyword=${encodeURIComponent(keyword)}&limit=30`, { timeout: 2500 })
             ]);
 
             if (ophimRes.status === 'fulfilled') addItems(ophimRes.value.data?.data?.items, 'https://img.ophim.live/uploads/movies/');
@@ -132,25 +137,25 @@ app.get('/catalog/:type/:id*', async (req, res) => {
     try {
         let items = [];
         if (rawId.startsWith('phim_le')) {
-            items = await fetchFastPages('phim-le');
+            items = await fetchManyPages('phim-le');
         } else if (rawId.startsWith('anime')) {
-            const rawAnime = await fetchFastPages('hoat-hinh');
+            const rawAnime = await fetchManyPages('hoat-hinh');
             items = rawAnime.filter(i => {
                 const name = (i.name + ' ' + (i.origin_name || '')).toLowerCase();
                 const countrySlug = i.country?.map(c => c.slug).join(' ') || '';
                 return name.includes('nhật') || name.includes('japan') || countrySlug.includes('nhat-ban');
             });
-            if (items.length < 5) items = rawAnime;
+            if (items.length < 50) items = rawAnime;
         } else if (rawId.startsWith('hoat_hinh_3d')) {
-            const rawHH = await fetchFastPages('hoat-hinh');
+            const rawHH = await fetchManyPages('hoat-hinh');
             items = rawHH.filter(i => {
                 const name = (i.name + ' ' + (i.origin_name || '')).toLowerCase();
                 const countrySlug = i.country?.map(c => c.slug).join(' ') || '';
                 return name.includes('trung quốc') || name.includes('china') || name.includes('3d') || countrySlug.includes('trung-quoc');
             });
-            if (items.length < 5) items = rawHH;
+            if (items.length < 50) items = rawHH;
         } else {
-            items = await fetchFastPages('phim-bo');
+            items = await fetchManyPages('phim-bo');
         }
 
         const metas = items.map(item => ({
@@ -181,8 +186,8 @@ app.get('/meta/:type/:id*', async (req, res) => {
         let imagePrefix = 'https://img.ophim.live/uploads/movies/';
 
         const [resO, resP] = await Promise.allSettled([
-            axios.get(`${OPHIM_API}/phim/${slug}`, { timeout: 2000 }),
-            axios.get(`${PHIMAPI_API}/phim/${slug}`, { timeout: 2000 })
+            axios.get(`${OPHIM_API}/phim/${slug}`, { timeout: 2500 }),
+            axios.get(`${PHIMAPI_API}/phim/${slug}`, { timeout: 2500 })
         ]);
 
         if (resO.status === 'fulfilled' && resO.value.data?.movie) {
@@ -252,7 +257,7 @@ app.get('/stream/:type/:id*', async (req, res) => {
 
         const fetchStreams = async (apiBase, sourceName) => {
             try {
-                let apiRes = await axios.get(`${apiBase}/phim/${slug}`, { timeout: 2000 });
+                let apiRes = await axios.get(`${apiBase}/phim/${slug}`, { timeout: 2500 });
                 const episodesList = apiRes.data?.episodes || [];
 
                 episodesList.forEach((server, sIdx) => {
@@ -261,7 +266,6 @@ app.get('/stream/:type/:id*', async (req, res) => {
                     const targetEp = serverData[epIndex] || serverData[0];
 
                     if (targetEp) {
-                        // Chỉ lấy link M3U8 trực tiếp, loại bỏ hoàn toàn embed để tránh lỗi 404
                         if (targetEp.link_m3u8) {
                             streams.push({
                                 title: `Ổ Phim - ${sourceName} ${serverName}`,
@@ -286,4 +290,4 @@ app.get('/stream/:type/:id*', async (req, res) => {
 
 app.listen(process.env.PORT || 3000);
 module.exports = app;
-            
+                                               
