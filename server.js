@@ -23,10 +23,10 @@ function formatPoster(url) {
     return `${CDN_IMAGE}/${url.replace(/^\//, '')}`;
 }
 
-// Manifest v17.0.0 - Cập nhật hiển thị ảnh tập phim và tối ưu giao diện TV
+// Manifest v18.0.0 - Tối ưu tiêu đề tập phim trên TV
 const manifest = {
-    id: 'vn.nguonc.movies.v17',
-    version: '17.0.0',
+    id: 'vn.nguonc.movies.v18',
+    version: '18.0.0',
     name: 'Nguồn C',
     description: 'Kho phim Bộ, Phim Lẻ, Hoạt Hình Vietsub chất lượng cao',
     resources: ['catalog', 'meta', 'stream'],
@@ -125,7 +125,7 @@ app.get('/catalog/:type/:id*', async (req, res) => {
     }
 });
 
-// Meta Route - Thêm thumbnail cho từng tập để không bị màn hình đen
+// Meta Route - Giữ tên tập gốc từ nguồn (VD: "Tập 01", "Full"...) để không bị lặp chữ
 app.get('/meta/:type/:id*', async (req, res) => {
     try {
         let rawId = req.params.id + (req.params[0] || '');
@@ -141,14 +141,17 @@ app.get('/meta/:type/:id*', async (req, res) => {
 
         const videos = rawEpisodes.map((ep, idx) => {
             let epNum = idx + 1;
-            if (ep.name) {
-                const match = ep.name.match(/\d+/);
-                if (match) epNum = parseInt(match[0]);
+            let epTitle = ep.name ? ep.name.trim() : `Tập ${epNum}`;
+            
+            // Nếu tên tập chưa có chữ Tập thì thêm vào cho chuẩn, nếu có rồi thì giữ nguyên
+            if (!/^tập/i.test(epTitle)) {
+                epTitle = `Tập ${epTitle}`;
             }
+
             return {
                 id: `phim_${movie.slug}:${idx + 1}`,
-                title: String(epNum),
-                thumbnail: movieThumb, // Gán ảnh phim cho tập để hiển thị bắt mắt thay vì màu đen
+                title: epTitle,
+                thumbnail: movieThumb,
                 released: new Date().toISOString(),
                 season: 1,
                 episode: epNum
@@ -206,4 +209,4 @@ app.get('/stream/:type/:id*', async (req, res) => {
 });
 
 module.exports = app;
-    
+            
