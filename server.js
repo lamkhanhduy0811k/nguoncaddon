@@ -25,10 +25,10 @@ function formatPoster(posterUrl, thumbUrl) {
 }
 
 const manifest = {
-    id: 'vn.ophim.official.v38',
-    version: '38.0.0',
-    name: 'OPhim (Universal ID Resolver)',
-    description: 'Kho phim OPhim tương thích tuyệt đối mọi nguồn ID trên Nuvio',
+    id: 'vn.ophim.official.v39',
+    version: '39.0.0',
+    name: 'Ổ Phim',
+    description: 'Kho phim Ổ Phim tổng hợp đa server, xem mượt mà trên Nuvio',
     resources: ['catalog', 'meta', 'stream'],
     types: ['movie', 'series'],
     idPrefixes: ['op_'],
@@ -36,25 +36,25 @@ const manifest = {
         {
             type: 'series',
             id: 'phim_bo',
-            name: 'OPhim - Phim Bộ',
+            name: 'Ổ Phim - Phim Bộ',
             extra: [{ name: 'search', isRequired: false }]
         },
         {
             type: 'movie',
             id: 'phim_le',
-            name: 'OPhim - Phim Lẻ',
+            name: 'Ổ Phim - Phim Lẻ',
             extra: [{ name: 'search', isRequired: false }]
         },
         {
             type: 'series',
             id: 'anime',
-            name: 'OPhim - Hoạt Hình Nhật (Anime)',
+            name: 'Ổ Phim - Hoạt Hình Nhật (Anime)',
             extra: [{ name: 'search', isRequired: false }]
         },
         {
             type: 'series',
             id: 'hoat_hinh_3d',
-            name: 'OPhim - Hoạt Hình 3D Trung Quốc',
+            name: 'Ổ Phim - Hoạt Hình 3D Trung Quốc',
             extra: [{ name: 'search', isRequired: false }]
         }
     ]
@@ -80,7 +80,6 @@ async function fetchMultiplePages(typePath, maxPages = 15) {
     return allItems;
 }
 
-// Hàm phân giải thông minh: Hỗ trợ cả ID nội bộ lẫn ID toàn cầu (IMDb từ Cinemeta)
 async function getOPhimSlugAndData(type, rawId) {
     let cleanId = rawId.replace('.json', '');
     let slug = '';
@@ -88,7 +87,6 @@ async function getOPhimSlugAndData(type, rawId) {
     if (cleanId.startsWith('op_')) {
         slug = cleanId.replace('op_', '').split(':')[0];
     } else {
-        // Nếu là ID từ nguồn ngoài (IMDb tt...), truy vấn Cinemeta để lấy tên phim gốc
         try {
             const cinemetaRes = await axios.get(`https://v3-cinemeta.strem.io/meta/${type}/${cleanId}.json`, { timeout: 4000 });
             const meta = cinemetaRes.data?.meta;
@@ -99,9 +97,7 @@ async function getOPhimSlugAndData(type, rawId) {
                     slug = items[0].slug;
                 }
             }
-        } catch (err) {
-            // Bỏ qua lỗi kết nối Cinemeta
-        }
+        } catch (err) {}
     }
 
     if (!slug) {
@@ -255,41 +251,21 @@ app.get('/stream/:type/:id*', async (req, res) => {
         if (!data || !data.episodes) return res.json({ streams: [] });
 
         const episodesList = data.episodes || [];
-
-        let targetEp = null;
-        for (const s of episodesList) {
-            const serverData = s.server_data || [];
-            if (serverData[epIndex] && (serverData[epIndex].link_m3u8 || serverData[epIndex].link_embed)) {
-                targetEp = serverData[epIndex];
-                break;
-            }
-        }
-
-        if (!targetEp) {
-            for (const s of episodesList) {
-                const serverData = s.server_data || [];
-                if (serverData.length > 0 && (serverData[0].link_m3u8 || serverData[0].link_embed)) {
-                    targetEp = serverData[0];
-                    break;
-                }
-            }
-        }
-
-        if (!targetEp) return res.json({ streams: [] });
-
         const streams = [];
-        if (targetEp.link_m3u8) {
-            streams.push({
-                title: `OPhim - ${targetEp.name || 'Full'} (M3U8)`,
-                url: targetEp.link_m3u8
-            });
-        }
-        if (targetEp.link_embed) {
-            streams.push({
-                title: `OPhim - ${targetEp.name || 'Full'} (Embed)`,
-                url: targetEp.link_embed
-            });
-        }
+
+        // Gom link stream từ TẤT CẢ các server để người dùng có nhiều lựa chọn thay thế
+        episodesList.forEach((server, sIdx) => {
+            const serverName = server.server_name || `Server ${sIdx + 1}`;
+            const serverData = server.server_data || [];
+            const targetEp = serverData[epIndex] || serverData[0];
+
+            if (targetEp && targetEp.link_m3u8) {
+                streams.push({
+                    title: `Ổ Phim - ${serverName} (${targetEp.name || 'HD'})`,
+                    url: targetEp.link_m3u8
+                });
+            }
+        });
 
         return res.json({ streams });
     } catch (e) {
