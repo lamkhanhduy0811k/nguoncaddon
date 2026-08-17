@@ -25,10 +25,10 @@ function formatPoster(posterUrl, thumbUrl, prefix = 'https://img.ophim.live/uplo
 }
 
 const manifest = {
-    id: 'vn.ophim.phimapi.v51',
-    version: '51.0.0',
+    id: 'vn.ophim.phimapi.v52',
+    version: '52.0.0',
     name: 'Ổ Phim',
-    description: 'Ổ Phim tối ưu tốc độ phản hồi siêu tốc',
+    description: 'Ổ Phim tối ưu chỉ dùng nguồn M3U8 trực tiếp, không lỗi embed',
     resources: ['catalog', 'meta', 'stream'],
     types: ['movie', 'series'],
     idPrefixes: ['op_'],
@@ -63,7 +63,6 @@ const manifest = {
 app.get('/', (req, res) => res.json(manifest));
 app.get('/manifest.json', (req, res) => res.json(manifest));
 
-// Chỉ quét nhanh trang 1 và 2 để tốc độ load tức thì không bị nghẽn
 async function fetchFastPages(typePath) {
     let allItems = [];
     try {
@@ -181,7 +180,6 @@ app.get('/meta/:type/:id*', async (req, res) => {
         let episodesList = [];
         let imagePrefix = 'https://img.ophim.live/uploads/movies/';
 
-        // Gọi đồng thời OPhim và PhimAPI để lấy dữ liệu nhanh nhất có thể
         const [resO, resP] = await Promise.allSettled([
             axios.get(`${OPHIM_API}/phim/${slug}`, { timeout: 2000 }),
             axios.get(`${PHIMAPI_API}/phim/${slug}`, { timeout: 2000 })
@@ -263,16 +261,11 @@ app.get('/stream/:type/:id*', async (req, res) => {
                     const targetEp = serverData[epIndex] || serverData[0];
 
                     if (targetEp) {
+                        // Chỉ lấy link M3U8 trực tiếp, loại bỏ hoàn toàn embed để tránh lỗi 404
                         if (targetEp.link_m3u8) {
                             streams.push({
-                                title: `Ổ Phim - ${sourceName} ${serverName} (M3U8)`,
+                                title: `Ổ Phim - ${sourceName} ${serverName}`,
                                 url: targetEp.link_m3u8
-                            });
-                        }
-                        if (targetEp.link_embed) {
-                            streams.push({
-                                title: `Ổ Phim - ${sourceName} ${serverName} (Embed)`,
-                                url: targetEp.link_embed
                             });
                         }
                     }
@@ -293,4 +286,4 @@ app.get('/stream/:type/:id*', async (req, res) => {
 
 app.listen(process.env.PORT || 3000);
 module.exports = app;
-                
+            
