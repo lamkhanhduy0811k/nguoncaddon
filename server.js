@@ -3,16 +3,32 @@ const cors = require('cors');
 const axios = require('axios');
 
 const app = express();
+
+// Bật CORS toàn diện cho Nuvio và Web Player
 app.use(cors());
+app.use((req, res, next) => {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Headers', '*');
+    res.setHeader('Access-Control-Allow-Methods', '*');
+    next();
+});
 
 const NGUONC_API = 'https://phim.nguonc.com/api';
 
-// 1. Khai báo Manifest chuẩn Stremio
+// Chuẩn hóa link ảnh sang HTTPS để Nuvio không bị chặn
+function fixUrl(url) {
+    if (!url) return '';
+    if (url.startsWith('//')) return 'https:' + url;
+    if (url.startsWith('http://')) return url.replace('http://', 'https://');
+    if (!url.startsWith('http')) return 'https://phim.nguonc.com' + (url.startsWith('/') ? '' : '/') + url;
+    return url;
+}
+
 const manifest = {
     id: 'com.sieutamphim.nguonc',
-    version: '1.0.2',
+    version: '1.0.3',
     name: 'Siêu Tầm Phim (Nguồn C)',
-    description: 'Xem phim Vietsub/Thuyết minh từ Nguồn C trên Stremio',
+    description: 'Xem phim Vietsub/Thuyết minh từ Nguồn C trên Nuvio / Stremio',
     resources: ['catalog', 'meta', 'stream'],
     types: ['movie', 'series'],
     idPrefixes: ['nguonc_'],
@@ -36,51 +52,48 @@ app.get('/manifest.json', (req, res) => {
     res.json(manifest);
 });
 
-// Hàm lấy danh sách phim
-async function getCatalogMetas(type, extraStr) {
-    let url = `${NGUONC_API}/films/phim-moi-cap-nhat?page=1`;
-    if (extraStr) {
-        const searchMatch = extraStr.match(/search=([^&]+)/);
-        if (searchMatch) {
-            url = `${NGUONC_API}/films/search?keyword=${encodeURIComponent(searchMatch[1])}`;
+// 1. Xử lý Catalog (Bắt mọi đường dẫn mở rộng từ Nuvio)
+app.get('/catalog/:type/:id*', async (req, res) => {
+    const { type } = req.params;
+    const fullPath = req.params[0] || '';
+
+    let searchQuery = '';
+    if (fullPath.includes('search=')) {
+        const match = fullPath.match(/search=([^/&.]+)/);
+        if (match) searchQuery = decodeURIComponent(match[1]);
+    }
+
+    try {
+        let url = `${NGUONC_API}/films/phim-moi-cap-nhat?page=1`;
+        if (searchQuery) {
+            url = `${NGUONC_API}/films/search?keyword=${encodeURIComponent(searchQuery)}`;
         }
-    }
 
-    const response = await axios.get(url, { timeout: 8000 });
-    const items = response.data.items || [];
+        const response = await axios.get(url, { timeout: 8000 });
+        const items = response.data.items || [];
 
-    return items.map(item => ({
-        id: `nguonc_${item.slug}`,
-        type: type || 'movie',
-        name: item.name,
-        poster: item.thumb_url || item.poster_url || '',
-        description: `Tên gốc: ${item.original_name || ''}`
-    }));
-}
+        const metas = items.map(item => ({
+            id: `nguonc_${item.slug}`,
+            type: type === 'series' ? 'series' : 'movie',
+            name: item.name,
+            poster: fixUrl(item.thumb_url || item.poster_url),
+            posterShape: 'poster',
+            description: item.original_name ? `Tên gốc: ${item.original_name}` : ''
+        }));
 
-// 2. Lấy danh sách phim & Tìm kiếm
-app.get('/catalog/:type/:id.json', async (req, res) => {
-    try {
-        const metas = await getCatalogMetas(req.params.type, null);
         res.json({ metas });
     } catch (e) {
         res.json({ metas: [] });
     }
 });
 
-app.get('/catalog/:type/:id/:extra.json', async (req, res) => {
+// 2. Xử lý Meta (Chi tiết phim)
+app.get('/meta/:type/:id*', async (req, res) => {
     try {
-        const metas = await getCatalogMetas(req.params.type, req.params.extra);
-        res.json({ metas });
-    } catch (e) {
-        res.json({ metas: [] });
-    }
-});
+        let rawId = req.params.id + (req.params[0] || '');
+        rawId = rawId.replace('.json', '');
+        const slug = rawId.replace('nguonc_', '');
 
-// 3. Lấy thông tin chi tiết phim
-app.get('/meta/:type/:id.json', async (req, res) => {
-    try {
-        const slug = req.params.id.replace('nguonc_', '');
         const response = await axios.get(`${NGUONC_API}/film/${slug}`, { timeout: 8000 });
         const movie = response.data.movie;
 
@@ -88,11 +101,11 @@ app.get('/meta/:type/:id.json', async (req, res) => {
 
         res.json({
             meta: {
-                id: req.params.id,
+                id: `nguonc_${movie.slug}`,
                 type: req.params.type,
                 name: movie.name,
-                poster: movie.thumb_url || movie.poster_url || '',
-                background: movie.poster_url || movie.thumb_url || '',
+                poster: fixUrl(movie.thumb_url || movie.poster_url),
+                background: fixUrl(movie.poster_url || movie.thumb_url),
                 description: movie.description ? movie.description.replace(/<[^>]*>?/gm, '') : '',
                 year: movie.year ? String(movie.year) : ''
             }
@@ -102,15 +115,20 @@ app.get('/meta/:type/:id.json', async (req, res) => {
     }
 });
 
-// 4. Bóc tách link Stream (m3u8)
-app.get('/stream/:type/:id.json', async (req, res) => {
+// 3. Xử lý Stream (Link xem phim)
+app.get('/stream/:type/:id*', async (req, res) => {
     try {
-        const parts = req.params.id.replace('nguonc_', '').split(':');
+        let rawId = req.params.id + (req.params[0] || '');
+        rawId = rawId.replace('.json', '');
+        const cleanId = rawId.replace('nguonc_', '');
+
+        const parts = cleanId.split(':');
         const slug = parts[0];
         const epIndex = parts[1] ? parseInt(parts[1]) - 1 : 0;
 
         const response = await axios.get(`${NGUONC_API}/film/${slug}`, { timeout: 8000 });
-        const episodes = response.data.movie?.episodes?.[0]?.items || [];
+        const movie = response.data.movie;
+        const episodes = movie?.episodes?.[0]?.items || [];
         const ep = episodes[epIndex] || episodes[0];
 
         if (!ep) return res.json({ streams: [] });
@@ -122,12 +140,6 @@ app.get('/stream/:type/:id.json', async (req, res) => {
                 url: ep.m3u8
             });
         }
-        if (ep.embed) {
-            streams.push({
-                title: `Nguồn C - ${ep.name || 'Full'} (Embed)`,
-                url: ep.embed
-            });
-        }
 
         res.json({ streams });
     } catch (e) {
@@ -137,4 +149,3 @@ app.get('/stream/:type/:id.json', async (req, res) => {
 
 const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
-            
