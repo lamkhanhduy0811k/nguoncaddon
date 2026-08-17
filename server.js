@@ -14,14 +14,12 @@ app.use((req, res, next) => {
 
 const NGUONC_API = 'https://phim.nguonc.com/api';
 
-// Bổ sung Full Header giả lập trình duyệt thật để vượt Cloudflare
 const axiosClient = axios.create({
     timeout: 10000,
     headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
         'Accept': 'application/json, text/plain, */*',
-        'Referer': 'https://phim.nguonc.com/',
-        'Origin': 'https://phim.nguonc.com'
+        'Referer': 'https://phim.nguonc.com/'
     }
 });
 
@@ -33,9 +31,10 @@ function fixUrl(url) {
     return url;
 }
 
+// Đổi ID mới ép Nuvio xóa toàn bộ cache cũ
 const manifest = {
-    id: 'com.sieutamphim.nguonc',
-    version: '1.0.5',
+    id: 'com.nguonc.v3',
+    version: '1.0.6',
     name: 'Siêu Tầm Phim (Nguồn C)',
     description: 'Xem phim Vietsub/Thuyết minh từ Nguồn C',
     resources: ['catalog', 'meta', 'stream'],
@@ -57,8 +56,17 @@ const manifest = {
 
 app.get('/manifest.json', (req, res) => res.json(manifest));
 
-// Hàm xử lý lấy dữ liệu chung
-async function fetchCatalog(type, searchQuery) {
+// Link kiểm tra trực tiếp kết nối Nguồn C
+app.get('/test', async (req, res) => {
+    try {
+        const response = await axiosClient.get(`${NGUONC_API}/films/phim-moi-cap-nhat?page=1`);
+        res.json({ status: 'OK', count: response.data?.items?.length || 0, sample: response.data?.items?.[0] });
+    } catch (e) {
+        res.status(500).json({ status: 'ERROR', message: e.message });
+    }
+});
+
+async function getMetas(type, searchQuery) {
     let url = `${NGUONC_API}/films/phim-moi-cap-nhat?page=1`;
     if (searchQuery) {
         url = `${NGUONC_API}/films/search?keyword=${encodeURIComponent(searchQuery)}`;
@@ -69,7 +77,7 @@ async function fetchCatalog(type, searchQuery) {
 
     return items.map(item => ({
         id: `nguonc_${item.slug}`,
-        type: type || 'movie',
+        type: type === 'series' ? 'series' : 'movie',
         name: item.name || 'Phim',
         poster: fixUrl(item.thumb_url || item.poster_url),
         posterShape: 'poster',
@@ -77,35 +85,31 @@ async function fetchCatalog(type, searchQuery) {
     }));
 }
 
-// 1. Catalog chuẩn không Search
-app.get('/catalog/:type/:id.json', async (req, res) => {
+// Route Catalog bắt mọi định dạng URL từ Nuvio
+app.get('/catalog/:type/:id*', async (req, res) => {
     try {
-        const metas = await fetchCatalog(req.params.type, null);
-        res.json({ metas });
-    } catch (e) {
-        res.json({ metas: [] });
-    }
-});
-
-// 2. Catalog có Search hoặc Tham số phụ từ Nuvio
-app.get('/catalog/:type/:id/:extra.json', async (req, res) => {
-    try {
-        let searchQuery = '';
-        if (req.params.extra.includes('search=')) {
-            const match = req.params.extra.match(/search=([^&]+)/);
+        const type = req.params.type;
+        let searchQuery = req.query.search || null;
+        
+        if (!searchQuery && req.params[0] && req.params[0].includes('search=')) {
+            const match = req.params[0].match(/search=([^/&.]+)/);
             if (match) searchQuery = decodeURIComponent(match[1]);
         }
-        const metas = await fetchCatalog(req.params.type, searchQuery);
+
+        const metas = await getMetas(type, searchQuery);
         res.json({ metas });
     } catch (e) {
         res.json({ metas: [] });
     }
 });
 
-// 3. Chi tiết phim
-app.get('/meta/:type/:id.json', async (req, res) => {
+// Meta Route
+app.get('/meta/:type/:id*', async (req, res) => {
     try {
-        const slug = req.params.id.replace('.json', '').replace('nguonc_', '');
+        let rawId = req.params.id + (req.params[0] || '');
+        rawId = rawId.replace('.json', '');
+        const slug = rawId.replace('nguonc_', '');
+
         const response = await axiosClient.get(`${NGUONC_API}/film/${slug}`);
         const movie = response.data?.movie;
 
@@ -127,10 +131,13 @@ app.get('/meta/:type/:id.json', async (req, res) => {
     }
 });
 
-// 4. Link xem phim
-app.get('/stream/:type/:id.json', async (req, res) => {
+// Stream Route
+app.get('/stream/:type/:id*', async (req, res) => {
     try {
-        const cleanId = req.params.id.replace('.json', '').replace('nguonc_', '');
+        let rawId = req.params.id + (req.params[0] || '');
+        rawId = rawId.replace('.json', '');
+        const cleanId = rawId.replace('nguonc_', '');
+
         const parts = cleanId.split(':');
         const slug = parts[0];
         const epIndex = parts[1] ? parseInt(parts[1]) - 1 : 0;
@@ -158,4 +165,4 @@ app.get('/stream/:type/:id.json', async (req, res) => {
 
 const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
-    
+            
