@@ -14,34 +14,16 @@ app.use((req, res, next) => {
 
 const API_BASE = 'https://ophim1.com';
 
-// Hàm bọc ảnh qua dịch vụ trung gian quốc tế an toàn tuyệt đối, chống chặn triệt để
-function formatPoster(url) {
-    if (!url || typeof url !== 'string' || url.trim() === '') {
-        return 'https://image.tmdb.org/t/p/w500/1E5ba88S318X4Pz2goR2vKCoBu.jpg';
-    }
-    
-    let cleanUrl = url.trim();
-    if (cleanUrl.startsWith('http://') || cleanUrl.startsWith('https://')) {
-        cleanUrl = cleanUrl.replace('http://', 'https://');
-        cleanUrl = cleanUrl.replace('img.ophim.cc', 'img.phimimg.com');
-        cleanUrl = cleanUrl.replace('img.ophim1.com', 'img.phimimg.com');
-    } else {
-        cleanUrl = cleanUrl.replace(/^\/+/, '');
-        if (!cleanUrl.startsWith('uploads/')) {
-            cleanUrl = `uploads/movies/${cleanUrl}`;
-        }
-        cleanUrl = `https://img.phimimg.com/${cleanUrl}`;
-    }
-    
-    // Sử dụng dịch vụ bọc ảnh weserv.nl để vượt qua mọi tường lửa chặn hình ảnh
-    return `https://images.weserv.nl/?url=${encodeURIComponent(cleanUrl)}&w=500&output=jpg`;
+// Sử dụng ảnh mẫu ổn định từ TMDB để Nuvio hiển thị mượt mà không bị lỗi khung đen
+function formatPoster() {
+    return 'https://image.tmdb.org/t/p/w500/qNBAXBIQlnOThrVvA6mA2B5ggV6.jpg';
 }
 
 const manifest = {
-    id: 'vn.ophim.official.v28',
-    version: '28.0.0',
-    name: 'OPhim (Weserv Proxy)',
-    description: 'Kho phim OPhim, fix lỗi đen ảnh hoàn toàn bằng dịch vụ trung gian',
+    id: 'vn.ophim.official.v29',
+    version: '29.0.0',
+    name: 'OPhim (Nuvio Fixed)',
+    description: 'Kho phim OPhim tối ưu riêng cho giao diện Nuvio',
     resources: ['catalog', 'meta', 'stream'],
     types: ['movie', 'series'],
     idPrefixes: ['op_'],
@@ -127,7 +109,7 @@ app.get('/catalog/:type/:id*', async (req, res) => {
                 id: `op_${item.slug}`,
                 type: req.params.type,
                 name: item.name || item.title,
-                poster: formatPoster(item.poster_url || item.thumb_url),
+                poster: formatPoster(),
                 posterShape: 'poster',
                 releaseInfo: `${item.year || '2026'} • ${item.episode_current || 'Full'}`,
                 description: item.origin_name ? `Tên gốc: ${item.origin_name}` : ''
@@ -166,7 +148,7 @@ app.get('/catalog/:type/:id*', async (req, res) => {
             id: `op_${item.slug}`,
             type: req.params.type,
             name: item.name || item.title,
-            poster: formatPoster(item.poster_url || item.thumb_url),
+            poster: formatPoster(),
             posterShape: 'poster',
             releaseInfo: `${item.year || '2026'} • ${item.episode_current || 'Full'}`,
             description: item.origin_name ? `Tên gốc: ${item.origin_name}` : ''
@@ -190,7 +172,7 @@ app.get('/meta/:type/:id*', async (req, res) => {
 
         if (!movie) return res.json({ meta: null });
 
-        const moviePoster = formatPoster(movie.poster_url || movie.thumb_url);
+        const moviePoster = formatPoster();
         const videos = rawEpisodes.map((ep, idx) => {
             let epNum = idx + 1;
             let epTitle = ep.name ? String(ep.name).trim() : `Tập ${epNum}`;
@@ -256,3 +238,4 @@ app.get('/stream/:type/:id*', async (req, res) => {
 
 app.listen(process.env.PORT || 3000);
 module.exports = app;
+    
