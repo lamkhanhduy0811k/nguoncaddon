@@ -14,22 +14,24 @@ app.use((req, res, next) => {
 
 const NGUONC_API = 'https://phim.nguonc.com/api';
 
-// Bắt buộc nạp poster qua weserv.nl để xử lý ảnh chống lấy cắp
+// Xử lý Poster qua wsrv.nl chuẩn định dạng để Nuvio hiển thị 100% ảnh
 function fixPoster(url) {
-    if (!url) return 'https://images.weserv.nl/?url=https://via.placeholder.com/300x450';
-    let clean = url;
+    if (!url) return 'https://wsrv.nl/?url=https://via.placeholder.com/300x450.png';
+    let clean = url.trim();
     if (clean.startsWith('//')) clean = 'https:' + clean;
     if (clean.startsWith('http://')) clean = clean.replace('http://', 'https://');
-    if (!clean.startsWith('http')) clean = 'https://phim.nguonc.com' + (clean.startsWith('/') ? '' : '/') + clean;
-    return `https://images.weserv.nl/?url=${encodeURIComponent(clean)}&w=300&h=450&fit=cover`;
+    if (!clean.startsWith('http')) {
+        clean = 'https://phim.nguonc.com' + (clean.startsWith('/') ? '' : '/') + clean;
+    }
+    return `https://wsrv.nl/?url=${encodeURIComponent(clean)}&w=300&h=450&fit=cover`;
 }
 
-// Đổi ID v13 để ép Nuvio xóa sạch cache cũ
+// Đổi ID v14 để Nuvio bắt buộc tải mới toàn bộ dữ liệu 500 phim
 const manifest = {
-    id: 'com.nguonc.phim.v13',
-    version: '1.3.0',
+    id: 'com.nguonc.phim.v14',
+    version: '1.4.0',
     name: 'Siêu Tầm Phim (Nguồn C)',
-    description: 'Xem phim Vietsub/Thuyết minh từ Nguồn C',
+    description: 'Xem phim Vietsub/Thuyết minh từ Nguồn C (500+ Phim)',
     resources: ['catalog', 'meta', 'stream'],
     types: ['movie', 'series'],
     idPrefixes: ['nguonc_'],
@@ -50,36 +52,37 @@ const manifest = {
 app.get('/', (req, res) => res.json(manifest));
 app.get('/manifest.json', (req, res) => res.json(manifest));
 
-async function getFilms(type) {
-    const endpoint = type === 'series' ? '/films/danh-sach/phim-bo?page=1' : '/films/phim-moi-cap-nhat?page=1';
-    let items = [];
+// Tải 25 trang cùng lúc (~500 phim)
+async function fetch500Films(type) {
+    const endpointBase = type === 'series' 
+        ? `${NGUONC_API}/films/danh-sach/phim-bo?page=` 
+        : `${NGUONC_API}/films/phim-moi-cap-nhat?page=`;
 
-    // Cách 1: Thử gọi trực tiếp Nguồn C
-    try {
-        const res1 = await axios.get(`${NGUONC_API}${endpoint}`, {
-            timeout: 4000,
-            headers: {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-                'Accept': 'application/json'
-            }
-        });
-        if (res1.data?.items?.length > 0) {
-            items = res1.data.items;
-        }
-    } catch (e) {}
+    const pageNumbers = Array.from({ length: 25 }, (_, i) => i + 1);
 
-    // Cách 2: Gọi qua AllOrigins Proxy nếu bị chặn IP
-    if (items.length === 0) {
+    const fetchPage = async (page) => {
+        const targetUrl = `${endpointBase}${page}`;
         try {
-            const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(NGUONC_API + endpoint)}`;
-            const res2 = await axios.get(proxyUrl, { timeout: 5000 });
-            if (res2.data?.items?.length > 0) {
-                items = res2.data.items;
+            const res = await axios.get(targetUrl, {
+                timeout: 4000,
+                headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' }
+            });
+            return res.data?.items || [];
+        } catch (e) {
+            try {
+                const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl)}`;
+                const res = await axios.get(proxyUrl, { timeout: 5000 });
+                return res.data?.items || [];
+            } catch (err) {
+                return [];
             }
-        } catch (e) {}
-    }
+        }
+    };
 
-    let metas = items.map(item => ({
+    const results = await Promise.all(pageNumbers.map(page => fetchPage(page)));
+    const allItems = results.flat();
+
+    const metas = allItems.map(item => ({
         id: `nguonc_${item.slug}`,
         type: type === 'series' ? 'series' : 'movie',
         name: item.name || 'Phim Nguồn C',
@@ -88,34 +91,12 @@ async function getFilms(type) {
         description: item.original_name ? `Tên gốc: ${item.original_name}` : ''
     }));
 
-    // ĐẢM BẢO KHÔNG BAO GIỜ TRẢ VỀ RỖNG (TRÁNH BỊ NUVIO ẨN MỤC)
-    if (metas.length === 0) {
-        metas = [
-            {
-                id: 'nguonc_trong-khi',
-                type: type,
-                name: 'Trọng Khí (2026)',
-                poster: fixPoster('https://phim.nguonc.com/uploads/movies/trong-khi-thumb.jpg'),
-                posterShape: 'poster',
-                description: 'Phim Nguồn C'
-            },
-            {
-                id: 'nguonc_tan-thuoc',
-                type: type,
-                name: 'Tàn Thuốc (2026)',
-                poster: fixPoster('https://phim.nguonc.com/uploads/movies/tan-thuoc-thumb.jpg'),
-                posterShape: 'poster',
-                description: 'Phim Nguồn C'
-            }
-        ];
-    }
-
     return metas;
 }
 
-// Catalog Routes
+// Catalog Route
 app.get('/catalog/:type/:id*', async (req, res) => {
-    const metas = await getFilms(req.params.type);
+    const metas = await fetch500Films(req.params.type);
     res.json({ metas });
 });
 
@@ -199,4 +180,4 @@ app.get('/stream/:type/:id*', async (req, res) => {
 });
 
 module.exports = app;
-                    
+        
