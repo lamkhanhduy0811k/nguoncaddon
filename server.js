@@ -14,6 +14,7 @@ app.use((req, res, next) => {
 
 const API_BASE = 'https://ophim1.com';
 
+// Hàm bọc ảnh qua dịch vụ trung gian quốc tế an toàn tuyệt đối, chống chặn triệt để
 function formatPoster(url) {
     if (!url || typeof url !== 'string' || url.trim() === '') {
         return 'https://image.tmdb.org/t/p/w500/1E5ba88S318X4Pz2goR2vKCoBu.jpg';
@@ -32,14 +33,15 @@ function formatPoster(url) {
         cleanUrl = `https://img.phimimg.com/${cleanUrl}`;
     }
     
-    return cleanUrl;
+    // Sử dụng dịch vụ bọc ảnh weserv.nl để vượt qua mọi tường lửa chặn hình ảnh
+    return `https://images.weserv.nl/?url=${encodeURIComponent(cleanUrl)}&w=500&output=jpg`;
 }
 
 const manifest = {
-    id: 'vn.ophim.official.v27',
-    version: '27.0.0',
-    name: 'OPhim (Direct Image)',
-    description: 'Kho phim OPhim tối ưu hóa hiển thị ảnh trực tiếp',
+    id: 'vn.ophim.official.v28',
+    version: '28.0.0',
+    name: 'OPhim (Weserv Proxy)',
+    description: 'Kho phim OPhim, fix lỗi đen ảnh hoàn toàn bằng dịch vụ trung gian',
     resources: ['catalog', 'meta', 'stream'],
     types: ['movie', 'series'],
     idPrefixes: ['op_'],
@@ -254,4 +256,3 @@ app.get('/stream/:type/:id*', async (req, res) => {
 
 app.listen(process.env.PORT || 3000);
 module.exports = app;
-            
