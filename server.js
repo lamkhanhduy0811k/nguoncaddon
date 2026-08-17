@@ -14,70 +14,92 @@ app.use((req, res, next) => {
 
 const API_BASE = 'https://ophim1.com';
 
-// Sử dụng WordPress Photon CDN (i0.wp.com) để vượt hoàn toàn tường lửa nhà mạng VN
-function formatPoster(url) {
+// Cổng Proxy Ảnh chạy trực tiếp trên Server Vercel của bạn
+app.get('/image-proxy', async (req, res) => {
+    const imageUrl = req.query.url;
+    if (!imageUrl) return res.status(400).send('Missing url');
+    try {
+        const response = await axios.get(imageUrl, {
+            responseType: 'arraybuffer',
+            timeout: 5000,
+            headers: {
+                'Referer': 'https://ophim1.com/',
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'
+            }
+        });
+        res.setHeader('Content-Type', response.headers['content-type'] || 'image/jpeg');
+        res.setHeader('Cache-Control', 'public, max-age=86400');
+        res.send(Buffer.from(response.data, 'binary'));
+    } catch (error) {
+        res.redirect('https://image.tmdb.org/t/p/w500/1E5ba88S318X4Pz2goR2vKCoBu.jpg');
+    }
+});
+
+function formatPoster(url, req) {
     if (!url || typeof url !== 'string' || url.trim() === '') {
         return 'https://image.tmdb.org/t/p/w500/1E5ba88S318X4Pz2goR2vKCoBu.jpg';
     }
     
     let cleanUrl = url.trim();
-    cleanUrl = cleanUrl.replace(/^https?:\/\//i, '');
-    cleanUrl = cleanUrl.replace('img.ophim.cc', 'img.phimimg.com');
-    cleanUrl = cleanUrl.replace('img.ophim1.com', 'img.phimimg.com');
-    
-    if (!cleanUrl.includes('img.phimimg.com') && !cleanUrl.includes('image.tmdb.org')) {
+    if (cleanUrl.startsWith('http://') || cleanUrl.startsWith('https://')) {
+        cleanUrl = cleanUrl.replace('http://', 'https://');
+        cleanUrl = cleanUrl.replace('img.ophim.cc', 'img.phimimg.com');
+        cleanUrl = cleanUrl.replace('img.ophim1.com', 'img.phimimg.com');
+    } else {
         cleanUrl = cleanUrl.replace(/^\/+/, '');
         if (!cleanUrl.startsWith('uploads/')) {
             cleanUrl = `uploads/movies/${cleanUrl}`;
         }
-        cleanUrl = `img.phimimg.com/${cleanUrl}`;
+        cleanUrl = `https://img.phimimg.com/${cleanUrl}`;
     }
     
-    // CDN WordPress giúp load ảnh siêu mượt, không bị nhà mạng chặn
-    return `https://i0.wp.com/${cleanUrl}`;
+    const host = req ? req.get('host') : 'nguoncaddon.vercel.app';
+    const protocol = req ? req.protocol : 'https';
+    
+    return `${protocol}://${host}/image-proxy?url=${encodeURIComponent(cleanUrl)}`;
 }
 
-function getBestPoster(item) {
+function getBestPoster(item, req) {
     if (item.poster_url && item.poster_url.trim() !== '') {
-        return formatPoster(item.poster_url);
+        return formatPoster(item.poster_url, req);
     }
     if (item.thumb_url && item.thumb_url.trim() !== '') {
-        return formatPoster(item.thumb_url);
+        return formatPoster(item.thumb_url, req);
     }
     return 'https://image.tmdb.org/t/p/w500/1E5ba88S318X4Pz2goR2vKCoBu.jpg';
 }
 
 const manifest = {
-    id: 'vn.nguonc.official.v26',
-    version: '26.3.0',
-    name: 'Nguồn C (Bản Chuẩn - Photon CDN)',
-    description: 'Kho phim độc quyền, fix triệt để lỗi đen ảnh bằng WordPress CDN',
+    id: 'vn.ophim.official.v26',
+    version: '26.4.0',
+    name: 'OPhim (Self Proxy)',
+    description: 'Kho phim OPhim chính hãng, tự chủ proxy ảnh chống nghẽn mạng',
     resources: ['catalog', 'meta', 'stream'],
     types: ['movie', 'series'],
-    idPrefixes: ['nc_'],
+    idPrefixes: ['op_'],
     catalogs: [
         {
             type: 'series',
             id: 'phim_bo',
-            name: 'Nguồn C - Phim Bộ',
+            name: 'OPhim - Phim Bộ',
             extra: [{ name: 'search', isRequired: false }]
         },
         {
             type: 'movie',
             id: 'phim_le',
-            name: 'Nguồn C - Phim Lẻ',
+            name: 'OPhim - Phim Lẻ',
             extra: [{ name: 'search', isRequired: false }]
         },
         {
             type: 'series',
             id: 'anime',
-            name: 'Nguồn C - Hoạt Hình Nhật (Anime)',
+            name: 'OPhim - Hoạt Hình Nhật (Anime)',
             extra: [{ name: 'search', isRequired: false }]
         },
         {
             type: 'series',
             id: 'hoat_hinh_3d',
-            name: 'Nguồn C - Hoạt Hình 3D Trung Quốc',
+            name: 'OPhim - Hoạt Hình 3D Trung Quốc',
             extra: [{ name: 'search', isRequired: false }]
         }
     ]
@@ -134,10 +156,10 @@ app.get('/catalog/:type/:id*', async (req, res) => {
             }
 
             const metas = items.map(item => ({
-                id: `nc_${item.slug}`,
+                id: `op_${item.slug}`,
                 type: req.params.type,
                 name: item.name || item.title,
-                poster: getBestPoster(item),
+                poster: getBestPoster(item, req),
                 posterShape: 'poster',
                 releaseInfo: `${item.year || '2026'} • ${item.episode_current || 'Full'}`,
                 description: item.origin_name ? `Tên gốc: ${item.origin_name}` : ''
@@ -173,10 +195,10 @@ app.get('/catalog/:type/:id*', async (req, res) => {
         }
 
         const metas = items.map(item => ({
-            id: `nc_${item.slug}`,
+            id: `op_${item.slug}`,
             type: req.params.type,
             name: item.name || item.title,
-            poster: getBestPoster(item),
+            poster: getBestPoster(item, req),
             posterShape: 'poster',
             releaseInfo: `${item.year || '2026'} • ${item.episode_current || 'Full'}`,
             description: item.origin_name ? `Tên gốc: ${item.origin_name}` : ''
@@ -191,7 +213,7 @@ app.get('/catalog/:type/:id*', async (req, res) => {
 app.get('/meta/:type/:id*', async (req, res) => {
     try {
         let rawId = req.params.id + (req.params[0] || '');
-        const slug = rawId.replace('.json', '').replace('nc_', '');
+        const slug = rawId.replace('.json', '').replace('op_', '');
 
         const apiRes = await axios.get(`${API_BASE}/phim/${slug}`, { timeout: 5000 });
         const movie = apiRes.data?.movie;
@@ -200,7 +222,7 @@ app.get('/meta/:type/:id*', async (req, res) => {
 
         if (!movie) return res.json({ meta: null });
 
-        const moviePoster = getBestPoster(movie);
+        const moviePoster = getBestPoster(movie, req);
         const videos = rawEpisodes.map((ep, idx) => {
             let epNum = idx + 1;
             let epTitle = ep.name ? String(ep.name).trim() : `Tập ${epNum}`;
@@ -208,7 +230,7 @@ app.get('/meta/:type/:id*', async (req, res) => {
                 epTitle = `Tập ${epTitle}`;
             }
             return {
-                id: `nc_${slug}:${idx + 1}`,
+                id: `op_${slug}:${idx + 1}`,
                 title: epTitle,
                 thumbnail: moviePoster,
                 released: new Date().toISOString(),
@@ -219,7 +241,7 @@ app.get('/meta/:type/:id*', async (req, res) => {
 
         return res.json({
             meta: {
-                id: `nc_${slug}`,
+                id: `op_${slug}`,
                 type: req.params.type,
                 name: movie.name || movie.title,
                 poster: moviePoster,
@@ -238,7 +260,7 @@ app.get('/meta/:type/:id*', async (req, res) => {
 app.get('/stream/:type/:id*', async (req, res) => {
     try {
         let rawId = req.params.id + (req.params[0] || '');
-        rawId = rawId.replace('.json', '').replace('nc_', '');
+        rawId = rawId.replace('.json', '').replace('op_', '');
 
         const parts = rawId.split(':');
         const slug = parts[0];
@@ -254,7 +276,7 @@ app.get('/stream/:type/:id*', async (req, res) => {
         return res.json({
             streams: [
                 {
-                    title: `Nguồn C - ${targetEp.name || 'Full'}`,
+                    title: `OPhim - ${targetEp.name || 'Full'}`,
                     url: targetEp.link_m3u8
                 }
             ]
@@ -266,3 +288,4 @@ app.get('/stream/:type/:id*', async (req, res) => {
 
 app.listen(process.env.PORT || 3000);
 module.exports = app;
+        
