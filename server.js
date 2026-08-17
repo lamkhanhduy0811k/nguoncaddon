@@ -23,12 +23,12 @@ function formatPoster(url) {
     return `${CDN_IMAGE}/${url.replace(/^\//, '')}`;
 }
 
-// Manifest v10.0.0 - Bắt buộc Nuvio load lại cấu trúc phân loại mới
+// Đổi ID mới để ép Nuvio nhận ngay phiên bản 10.0.0
 const manifest = {
-    id: 'com.suutamphim.nuvio.v10',
+    id: 'com.nguonc.phim.v1000',
     version: '10.0.0',
-    name: 'Nguồn C Phim',
-    description: 'Phim Bộ, Phim Lẻ, Hoạt Hình phân loại chuẩn xác',
+    name: 'Nguồn C Phim (v10)',
+    description: 'Phim Bộ, Phim Lẻ, Hoạt Hình phân loại chuẩn 100%',
     resources: ['catalog', 'meta', 'stream'],
     types: ['movie', 'series'],
     idPrefixes: ['phim_'],
@@ -54,7 +54,7 @@ const manifest = {
 app.get('/', (req, res) => res.json(manifest));
 app.get('/manifest.json', (req, res) => res.json(manifest));
 
-// Catalog Route - Phân loại phim chính xác 100%
+// Catalog Route - Lọc đúng phim cho từng mục
 app.get('/catalog/:type/:id*', async (req, res) => {
     let rawId = req.params.id + (req.params[0] || '');
     rawId = rawId.replace('.json', '');
@@ -80,7 +80,7 @@ app.get('/catalog/:type/:id*', async (req, res) => {
                 name: item.name || item.title,
                 poster: formatPoster(item.poster_url || item.thumb_url),
                 posterShape: 'poster',
-                releaseInfo: `${year} •${ep}`,
+                releaseInfo: `${year} • ${ep}`,
                 description: item.origin_name ? `Tên gốc: ${item.origin_name}` : ''
             };
         });
@@ -111,7 +111,7 @@ app.get('/meta/:type/:id*', async (req, res) => {
                 background: formatPoster(movie.thumb_url || movie.poster_url),
                 description: movie.content ? movie.content.replace(/<[^>]*>?/gm, '') : '',
                 year: String(movie.year || '2026'),
-                releaseInfo: `${movie.year \vert{}\vert{} '2026'} •${movie.episode_current || 'Full'}`
+                releaseInfo: `${movie.year || '2026'} • ${movie.episode_current || 'Full'}`
             }
         });
     } catch (e) {
