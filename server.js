@@ -25,10 +25,10 @@ function formatPoster(posterUrl, thumbUrl) {
 }
 
 const manifest = {
-    id: 'vn.ophim.official.v35',
-    version: '35.0.0',
-    name: 'OPhim (Direct Proxy Stream)',
-    description: 'Kho phim OPhim tối ưu hóa luồng phát video siêu mượt trên Nuvio',
+    id: 'vn.ophim.official.v36',
+    version: '36.0.0',
+    name: 'OPhim (Exact Slug Match)',
+    description: 'Kho phim OPhim khớp chuẩn xác 100% ID và nguồn phát',
     resources: ['catalog', 'meta', 'stream'],
     types: ['movie', 'series'],
     idPrefixes: ['op_'],
@@ -251,16 +251,11 @@ app.get('/stream/:type/:id*', async (req, res) => {
 
         if (!targetEp || !targetEp.link_m3u8) return res.json({ streams: [] });
 
-        // Cung cấp đồng thời cả link trực tiếp và link chuyển hướng chuẩn HLS để app Nuvio tương thích tối đa
         return res.json({
             streams: [
                 {
-                    title: `OPhim - ${targetEp.name || 'Full'} (HD)`,
+                    title: `OPhim - ${targetEp.name || 'Full'}`,
                     url: targetEp.link_m3u8
-                },
-                {
-                    title: `OPhim - ${targetEp.name || 'Full'} (Alternative)`,
-                    url: targetEp.link_embed || targetEp.link_m3u8
                 }
             ]
         });
