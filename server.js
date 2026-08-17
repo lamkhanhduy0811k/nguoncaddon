@@ -14,9 +14,9 @@ app.use((req, res, next) => {
 
 const NGUONC_API = 'https://phim.nguonc.com/api';
 
-// Chuẩn hóa link ảnh trực tiếp từ máy chủ Nguồn C
+// Chuẩn hóa link ảnh trực tiếp
 function fixPoster(url) {
-    if (!url) return '';
+    if (!url) return 'https://i.imgur.com/Q2AU42q.png';
     let clean = String(url).trim();
     if (clean.startsWith('//')) clean = 'https:' + clean;
     if (clean.startsWith('http://')) clean = clean.replace('http://', 'https://');
@@ -26,12 +26,12 @@ function fixPoster(url) {
     return clean;
 }
 
-// Manifest v2.2.0 ép Nuvio làm mới bộ nhớ đệm
+// Manifest v3.0.0 ép Nuvio reset toàn bộ cache
 const manifest = {
-    id: 'com.nguonc.phim.v22',
-    version: '2.2.0',
+    id: 'com.nguonc.phim.v30',
+    version: '3.0.0',
     name: 'Siêu Tầm Phim (Nguồn C)',
-    description: 'Xem phim Vietsub/Thuyết minh từ Nguồn C (Bản Chuẩn)',
+    description: 'Xem phim Vietsub/Thuyết minh từ Nguồn C',
     resources: ['catalog', 'meta', 'stream'],
     types: ['movie', 'series'],
     idPrefixes: ['nguonc_'],
@@ -52,47 +52,63 @@ const manifest = {
 app.get('/', (req, res) => res.json(manifest));
 app.get('/manifest.json', (req, res) => res.json(manifest));
 
-// Gọi API song song (Cổng nào phản hồi nhanh nhất dưới 2 giây sẽ lấy ngay)
-async function fetchFastAPI(endpoint) {
-    const targetUrl = `${NGUONC_API}${endpoint}`;
-    
-    const fetchers = [
-        axios.get(targetUrl, {
-            timeout: 2200,
-            headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' }
-        }),
-        axios.get(`https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl)}`, { timeout: 2500 }),
-        axios.get(`https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(targetUrl)}`, { timeout: 2500 })
-    ];
-
-    try {
-        const response = await Promise.any(fetchers);
-        const data = typeof response.data === 'string' ? JSON.parse(response.data) : response.data;
-        if (data?.items || data?.movie) return data;
-    } catch (e) {}
-
-    return null;
-}
-
-// Catalog Route
-app.get('/catalog/:type/:id*', async (req, res) => {
-    const type = req.params.type;
+// Gọi API nhanh với timeout chống đơ Nuvio
+async function fetchFilms(type) {
     const endpoint = type === 'series' 
         ? '/films/danh-sach/phim-bo?page=1' 
         : '/films/phim-moi-cap-nhat?page=1';
 
-    const data = await fetchFastAPI(endpoint);
-    const items = data?.items || [];
+    try {
+        const res = await axios.get(`${NGUONC_API}${endpoint}`, {
+            timeout: 2800,
+            headers: { 
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36' 
+            }
+        });
+        if (res.data?.items?.length > 0) {
+            return res.data.items.map(item => ({
+                id: `nguonc_${item.slug}`,
+                type: type === 'series' ? 'series' : 'movie',
+                name: item.name || 'Phim Nguồn C',
+                poster: fixPoster(item.thumb_url || item.poster_url),
+                posterShape: 'poster',
+                description: item.original_name ? `Tên gốc: ${item.original_name}` : ''
+            }));
+        }
+    } catch (e) {}
 
-    const metas = items.map(item => ({
-        id: `nguonc_${item.slug}`,
-        type: type === 'series' ? 'series' : 'movie',
-        name: item.name || 'Phim Nguồn C',
-        poster: fixPoster(item.thumb_url || item.poster_url),
-        posterShape: 'poster',
-        description: item.original_name ? `Tên gốc: ${item.original_name}` : ''
-    }));
+    // Dữ liệu dự phòng giữ cho hàng phim LUÔN HIỆN DIỆN khi API chập chờn
+    return [
+        {
+            id: 'nguonc_trong-khi',
+            type: type === 'series' ? 'series' : 'movie',
+            name: 'Trọng Khí (2026)',
+            poster: 'https://phim.nguonc.com/uploads/movies/trong-khi-thumb.jpg',
+            posterShape: 'poster',
+            description: 'Phim Nguồn C'
+        },
+        {
+            id: 'nguonc_tan-thuoc',
+            type: type === 'series' ? 'series' : 'movie',
+            name: 'Tàn Thuốc (2026)',
+            poster: 'https://phim.nguonc.com/uploads/movies/tan-thuoc-thumb.jpg',
+            posterShape: 'poster',
+            description: 'Phim Nguồn C'
+        },
+        {
+            id: 'nguonc_sat-thu-noi-tro',
+            type: type === 'series' ? 'series' : 'movie',
+            name: 'Sát Thủ Nội Trợ (2026)',
+            poster: 'https://phim.nguonc.com/uploads/movies/sat-thu-noi-tro-thumb.jpg',
+            posterShape: 'poster',
+            description: 'Phim Nguồn C'
+        }
+    ];
+}
 
+// Catalog Route
+app.get('/catalog/:type/:id*', async (req, res) => {
+    const metas = await fetchFilms(req.params.type);
     res.json({ metas });
 });
 
@@ -102,8 +118,11 @@ app.get('/meta/:type/:id*', async (req, res) => {
         let rawId = req.params.id + (req.params[0] || '');
         rawId = rawId.replace('.json', '').replace('nguonc_', '');
 
-        const data = await fetchFastAPI(`/film/${rawId}`);
-        const movie = data?.movie;
+        const resNguonC = await axios.get(`${NGUONC_API}/film/${rawId}`, {
+            timeout: 3000,
+            headers: { 'User-Agent': 'Mozilla/5.0' }
+        });
+        const movie = resNguonC.data?.movie;
 
         if (!movie) return res.json({ meta: null });
 
@@ -133,8 +152,11 @@ app.get('/stream/:type/:id*', async (req, res) => {
         const slug = parts[0];
         const epIndex = parts[1] ? parseInt(parts[1]) - 1 : 0;
 
-        const data = await fetchFastAPI(`/film/${slug}`);
-        const movie = data?.movie;
+        const resNguonC = await axios.get(`${NGUONC_API}/film/${slug}`, {
+            timeout: 3000,
+            headers: { 'User-Agent': 'Mozilla/5.0' }
+        });
+        const movie = resNguonC.data?.movie;
         const episodes = movie?.episodes?.[0]?.items || [];
         const ep = episodes[epIndex] || episodes[0];
 
@@ -155,3 +177,4 @@ app.get('/stream/:type/:id*', async (req, res) => {
 });
 
 module.exports = app;
+                
