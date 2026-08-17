@@ -23,12 +23,12 @@ function formatPoster(url) {
     return `${CDN_IMAGE}/${url.replace(/^\//, '')}`;
 }
 
-// Manifest v12.0.0
+// Manifest v13.0.0
 const manifest = {
-    id: 'com.nguonc.phim.v1200',
-    version: '12.0.0',
+    id: 'com.nguonc.phim.v1300',
+    version: '13.0.0',
     name: 'Nguồn C Phim',
-    description: 'Kho phim khổng lồ & hiển thị tập chuẩn xác',
+    description: 'Kho phim lớn & Hiện danh sách tập chuẩn xác',
     resources: ['catalog', 'meta', 'stream'],
     types: ['movie', 'series'],
     idPrefixes: ['phim_'],
@@ -57,12 +57,11 @@ const manifest = {
 app.get('/', (req, res) => res.json(manifest));
 app.get('/manifest.json', (req, res) => res.json(manifest));
 
-// Catalog Route - Tải kho phim lớn + Hiện tập ở trang chủ
+// Catalog Route - Lấy nhiều phim + hiện tập ở ngoài
 app.get('/catalog/:type/:id*', async (req, res) => {
     let rawId = req.params.id + (req.params[0] || '');
     rawId = rawId.replace('.json', '');
 
-    // Xử lý khi Tìm kiếm
     if (rawId.includes('search=')) {
         const queryMatch = rawId.match(/search=([^&]+)/);
         const keyword = queryMatch ? decodeURIComponent(queryMatch[1]) : '';
@@ -72,7 +71,7 @@ app.get('/catalog/:type/:id*', async (req, res) => {
         }
 
         try {
-            const apiRes = await axios.get(`${API_BASE}/v1/api/tim-kiem?keyword=${encodeURIComponent(keyword)}&limit=50`, { timeout: 4000 });
+            const apiRes = await axios.get(`${API_BASE}/v1/api/tim-kiem?keyword=${encodeURIComponent(keyword)}&limit=60`, { timeout: 4000 });
             const items = apiRes.data?.data?.items || [];
 
             const metas = items.map(item => ({
@@ -91,7 +90,6 @@ app.get('/catalog/:type/:id*', async (req, res) => {
         }
     }
 
-    // Xử lý danh mục thường (Gộp 10 trang API = hàng trăm phim)
     let typePath = 'phim-bo';
     if (rawId.startsWith('phim_le')) {
         typePath = 'phim-le';
@@ -100,7 +98,8 @@ app.get('/catalog/:type/:id*', async (req, res) => {
     }
 
     try {
-        const pages = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+        // Tải 12 trang cùng lúc để kho phim dài mênh mông
+        const pages = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
         const requests = pages.map(p => axios.get(`${API_BASE}/v1/api/danh-sach/${typePath}?page=${p}`, { timeout: 4000 }).catch(() => null));
         const responses = await Promise.all(requests);
 
@@ -127,7 +126,7 @@ app.get('/catalog/:type/:id*', async (req, res) => {
     }
 });
 
-// Meta Route
+// Meta Route - Cấu trúc lại dữ liệu Videos để Nuvio hiện từng Tập
 app.get('/meta/:type/:id*', async (req, res) => {
     try {
         let rawId = req.params.id + (req.params[0] || '');
@@ -135,8 +134,18 @@ app.get('/meta/:type/:id*', async (req, res) => {
 
         const apiRes = await axios.get(`${API_BASE}/phim/${slug}`, { timeout: 4000 });
         const movie = apiRes.data?.movie;
+        const rawEpisodes = apiRes.data?.episodes?.[0]?.server_data || [];
 
         if (!movie) return res.json({ meta: null });
+
+        // Tạo danh sách các tập phim theo đúng định dạng Nuvio/Stremio
+        const videos = rawEpisodes.map((ep, idx) => ({
+            id: `phim_${movie.slug}:${idx + 1}`,
+            title: ep.name ? `Tập ${ep.name}` : `Tập ${idx + 1}`,
+            released: new Date().toISOString(),
+            season: 1,
+            episode: idx + 1
+        }));
 
         return res.json({
             meta: {
@@ -147,7 +156,8 @@ app.get('/meta/:type/:id*', async (req, res) => {
                 background: formatPoster(movie.thumb_url || movie.poster_url),
                 description: movie.content ? movie.content.replace(/<[^>]*>?/gm, '') : '',
                 year: String(movie.year || '2026'),
-                releaseInfo: `${movie.year || '2026'} • ${movie.episode_current || 'Full'}`
+                releaseInfo: `${movie.year || '2026'} • ${movie.episode_current || 'Full'}`,
+                videos: videos.length > 0 ? videos : undefined
             }
         });
     } catch (e) {
@@ -155,21 +165,34 @@ app.get('/meta/:type/:id*', async (req, res) => {
     }
 });
 
-// Stream Route
+// Stream Route - Trả đúng nguồn video theo từng tập người dùng bấm chọn
 app.get('/stream/:type/:id*', async (req, res) => {
     try {
         let rawId = req.params.id + (req.params[0] || '');
-        const slug = rawId.replace('.json', '').replace('phim_', '');
+        rawId = rawId.replace('.json', '').replace('phim_', '');
+
+        // Tách slug phim và số tập (VD: phim_cau-va-to:2 -> slug = cau-va-to, epIndex = 2)
+        const parts = rawId.split(':');
+        const slug = parts[0];
+        const epIndex = parts[1] ? parseInt(parts[1]) - 1 : 0;
 
         const apiRes = await axios.get(`${API_BASE}/phim/${slug}`, { timeout: 4000 });
         const episodes = apiRes.data?.episodes?.[0]?.server_data || [];
 
-        const streams = episodes.map(ep => ({
-            title: `Nguồn C - ${ep.name || 'Full'}`,
-            url: ep.link_m3u8
-        })).filter(s => s.url);
+        const targetEp = episodes[epIndex] || episodes[0];
 
-        return res.json({ streams });
+        if (!targetEp || !targetEp.link_m3u8) {
+            return res.json({ streams: [] });
+        }
+
+        return res.json({
+            streams: [
+                {
+                    title: `Nguồn C - ${targetEp.name || 'Full'}`,
+                    url: targetEp.link_m3u8
+                }
+            ]
+        });
     } catch (e) {
         res.json({ streams: [] });
     }
