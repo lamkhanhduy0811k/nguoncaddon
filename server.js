@@ -23,12 +23,12 @@ function formatPoster(url) {
     return `${CDN_IMAGE}/${url.replace(/^\//, '')}`;
 }
 
-// Manifest v13.0.0
+// Manifest v14.0.0 - Đổi tên thành "Nguồn C" ngắn gọn
 const manifest = {
-    id: 'com.nguonc.phim.v1300',
-    version: '13.0.0',
-    name: 'Nguồn C Phim',
-    description: 'Kho phim lớn & Hiện danh sách tập chuẩn xác',
+    id: 'com.nguonc.phim.v1400',
+    version: '14.0.0',
+    name: 'Nguồn C',
+    description: 'Kho phim Bộ, Phim Lẻ, Hoạt Hình Vietsub',
     resources: ['catalog', 'meta', 'stream'],
     types: ['movie', 'series'],
     idPrefixes: ['phim_'],
@@ -57,7 +57,7 @@ const manifest = {
 app.get('/', (req, res) => res.json(manifest));
 app.get('/manifest.json', (req, res) => res.json(manifest));
 
-// Catalog Route - Lấy nhiều phim + hiện tập ở ngoài
+// Catalog Route
 app.get('/catalog/:type/:id*', async (req, res) => {
     let rawId = req.params.id + (req.params[0] || '');
     rawId = rawId.replace('.json', '');
@@ -98,7 +98,6 @@ app.get('/catalog/:type/:id*', async (req, res) => {
     }
 
     try {
-        // Tải 12 trang cùng lúc để kho phim dài mênh mông
         const pages = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
         const requests = pages.map(p => axios.get(`${API_BASE}/v1/api/danh-sach/${typePath}?page=${p}`, { timeout: 4000 }).catch(() => null));
         const responses = await Promise.all(requests);
@@ -126,7 +125,7 @@ app.get('/catalog/:type/:id*', async (req, res) => {
     }
 });
 
-// Meta Route - Cấu trúc lại dữ liệu Videos để Nuvio hiện từng Tập
+// Meta Route - Sửa lỗi trùng từ "Tập"
 app.get('/meta/:type/:id*', async (req, res) => {
     try {
         let rawId = req.params.id + (req.params[0] || '');
@@ -138,14 +137,19 @@ app.get('/meta/:type/:id*', async (req, res) => {
 
         if (!movie) return res.json({ meta: null });
 
-        // Tạo danh sách các tập phim theo đúng định dạng Nuvio/Stremio
-        const videos = rawEpisodes.map((ep, idx) => ({
-            id: `phim_${movie.slug}:${idx + 1}`,
-            title: ep.name ? `Tập ${ep.name}` : `Tập ${idx + 1}`,
-            released: new Date().toISOString(),
-            season: 1,
-            episode: idx + 1
-        }));
+        // Chỉ truyền tên/số tập gốc (VD: "03" thay vì "Tập 03") để Nuvio không bị trùng chữ "Tập"
+        const videos = rawEpisodes.map((ep, idx) => {
+            let epName = ep.name ? String(ep.name).replace(/^Tập\s*/i, '').trim() : String(idx + 1);
+            if (epName.length === 1) epName = `0${epName}`;
+
+            return {
+                id: `phim_${movie.slug}:${idx + 1}`,
+                title: epName,
+                released: new Date().toISOString(),
+                season: 1,
+                episode: idx + 1
+            };
+        });
 
         return res.json({
             meta: {
@@ -165,13 +169,12 @@ app.get('/meta/:type/:id*', async (req, res) => {
     }
 });
 
-// Stream Route - Trả đúng nguồn video theo từng tập người dùng bấm chọn
+// Stream Route
 app.get('/stream/:type/:id*', async (req, res) => {
     try {
         let rawId = req.params.id + (req.params[0] || '');
         rawId = rawId.replace('.json', '').replace('phim_', '');
 
-        // Tách slug phim và số tập (VD: phim_cau-va-to:2 -> slug = cau-va-to, epIndex = 2)
         const parts = rawId.split(':');
         const slug = parts[0];
         const epIndex = parts[1] ? parseInt(parts[1]) - 1 : 0;
@@ -199,4 +202,3 @@ app.get('/stream/:type/:id*', async (req, res) => {
 });
 
 module.exports = app;
-            
