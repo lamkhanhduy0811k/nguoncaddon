@@ -17,26 +17,22 @@ const API_BASE = 'https://ophim1.com';
 function formatPoster(url) {
     if (!url) return 'https://image.tmdb.org/t/p/w500/1E5ba88S318X4Pz2goR2vKCoBu.jpg';
     
-    // Bắt buộc ép mọi link ảnh cũ/chết chuyển đổi hoàn toàn về img.phimimg.com
-    if (url.includes('uploads/')) {
-        const parts = url.split('uploads/');
-        const subPath = parts[1]; 
-        return `https://img.phimimg.com/uploads/${subPath}`;
-    }
-    
-    if (url.startsWith('http://') || url.startsWith('https://')) {
-        const filename = url.split('/').pop();
-        if (filename) {
-            return `https://img.phimimg.com/uploads/movies/${filename}`;
+    let cleanUrl = url;
+    if (!cleanUrl.startsWith('http')) {
+        cleanUrl = cleanUrl.replace(/^\/+/, '');
+        if (cleanUrl.startsWith('uploads/')) {
+            cleanUrl = `https://img.phimimg.com/${cleanUrl}`;
+        } else {
+            cleanUrl = `https://img.phimimg.com/uploads/movies/${cleanUrl}`;
         }
-        return url.replace('http://', 'https://');
     }
     
-    const cleanUrl = url.replace(/^\/+/, '');
-    if (cleanUrl.startsWith('uploads/')) {
-        return `https://img.phimimg.com/${cleanUrl}`;
-    }
-    return `https://img.phimimg.com/uploads/movies/${cleanUrl}`;
+    cleanUrl = cleanUrl.replace('img.ophim.cc', 'img.phimimg.com')
+                       .replace('img.ophim1.com', 'img.phimimg.com')
+                       .replace('http://', 'https://');
+
+    // Sử dụng proxy weserv.nl để ép hiển thị ảnh thành công, chống lỗi màn hình đen trên Nuvio
+    return `https://images.weserv.nl/?url=${encodeURIComponent(cleanUrl.replace(/^https?:\/\//, ''))}`;
 }
 
 function getBestPoster(item) {
@@ -50,10 +46,10 @@ function getBestPoster(item) {
 }
 
 const manifest = {
-    id: 'vn.nguonc.official.v30',
-    version: '30.0.0',
+    id: 'vn.nguonc.official.v31',
+    version: '31.0.0',
     name: 'Nguồn C',
-    description: 'Kho phim độc quyền đa dạng, fix lỗi hoàn toàn ảnh poster',
+    description: 'Kho phim độc quyền đa dạng, fix triệt để lỗi ảnh đen',
     resources: ['catalog', 'meta', 'stream'],
     types: ['movie', 'series'],
     idPrefixes: ['nc_'],
@@ -249,4 +245,4 @@ app.get('/stream/:type/:id*', async (req, res) => {
 
 app.listen(process.env.PORT || 3000);
 module.exports = app;
-                                    
+                              
