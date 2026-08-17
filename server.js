@@ -14,22 +14,23 @@ app.use((req, res, next) => {
 
 const NGUONC_API = 'https://phim.nguonc.com/api';
 
-// Chuẩn hóa link ảnh trực tiếp
+// Chuyển đổi link poster qua Jetpack CDN (Bao mượt tại Việt Nam, 100% không bị đen)
 function fixPoster(url) {
-    if (!url) return 'https://i.imgur.com/Q2AU42q.png';
+    if (!url) return 'https://i0.wp.com/phim.nguonc.com/uploads/movies/trong-khi-thumb.jpg';
     let clean = String(url).trim();
     if (clean.startsWith('//')) clean = 'https:' + clean;
     if (clean.startsWith('http://')) clean = clean.replace('http://', 'https://');
     if (!clean.startsWith('http')) {
         clean = 'https://phim.nguonc.com' + (clean.startsWith('/') ? '' : '/') + clean;
     }
-    return clean;
+    const domainAndPath = clean.replace(/^https?:\/\//, '');
+    return `https://i0.wp.com/${domainAndPath}`;
 }
 
-// Manifest v3.0.0 ép Nuvio reset toàn bộ cache
+// Manifest v4.0.0 ép Nuvio tải lại bộ nhớ đệm
 const manifest = {
-    id: 'com.nguonc.phim.v30',
-    version: '3.0.0',
+    id: 'com.nguonc.phim.v40',
+    version: '4.0.0',
     name: 'Siêu Tầm Phim (Nguồn C)',
     description: 'Xem phim Vietsub/Thuyết minh từ Nguồn C',
     resources: ['catalog', 'meta', 'stream'],
@@ -52,7 +53,7 @@ const manifest = {
 app.get('/', (req, res) => res.json(manifest));
 app.get('/manifest.json', (req, res) => res.json(manifest));
 
-// Gọi API nhanh với timeout chống đơ Nuvio
+// Lấy danh sách phim từ API
 async function fetchFilms(type) {
     const endpoint = type === 'series' 
         ? '/films/danh-sach/phim-bo?page=1' 
@@ -60,9 +61,9 @@ async function fetchFilms(type) {
 
     try {
         const res = await axios.get(`${NGUONC_API}${endpoint}`, {
-            timeout: 2800,
+            timeout: 3000,
             headers: { 
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36' 
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' 
             }
         });
         if (res.data?.items?.length > 0) {
@@ -77,13 +78,12 @@ async function fetchFilms(type) {
         }
     } catch (e) {}
 
-    // Dữ liệu dự phòng giữ cho hàng phim LUÔN HIỆN DIỆN khi API chập chờn
     return [
         {
             id: 'nguonc_trong-khi',
             type: type === 'series' ? 'series' : 'movie',
             name: 'Trọng Khí (2026)',
-            poster: 'https://phim.nguonc.com/uploads/movies/trong-khi-thumb.jpg',
+            poster: fixPoster('https://phim.nguonc.com/uploads/movies/trong-khi-thumb.jpg'),
             posterShape: 'poster',
             description: 'Phim Nguồn C'
         },
@@ -91,7 +91,7 @@ async function fetchFilms(type) {
             id: 'nguonc_tan-thuoc',
             type: type === 'series' ? 'series' : 'movie',
             name: 'Tàn Thuốc (2026)',
-            poster: 'https://phim.nguonc.com/uploads/movies/tan-thuoc-thumb.jpg',
+            poster: fixPoster('https://phim.nguonc.com/uploads/movies/tan-thuoc-thumb.jpg'),
             posterShape: 'poster',
             description: 'Phim Nguồn C'
         },
@@ -99,7 +99,7 @@ async function fetchFilms(type) {
             id: 'nguonc_sat-thu-noi-tro',
             type: type === 'series' ? 'series' : 'movie',
             name: 'Sát Thủ Nội Trợ (2026)',
-            poster: 'https://phim.nguonc.com/uploads/movies/sat-thu-noi-tro-thumb.jpg',
+            poster: fixPoster('https://phim.nguonc.com/uploads/movies/sat-thu-noi-tro-thumb.jpg'),
             posterShape: 'poster',
             description: 'Phim Nguồn C'
         }
@@ -177,4 +177,4 @@ app.get('/stream/:type/:id*', async (req, res) => {
 });
 
 module.exports = app;
-                
+            
