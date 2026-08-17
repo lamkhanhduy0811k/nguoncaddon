@@ -14,24 +14,34 @@ app.use((req, res, next) => {
 
 const API_BASE = 'https://ophim1.com';
 
-// Cổng Proxy Ảnh chạy trực tiếp trên Server Vercel của bạn
+// Cổng Proxy thông minh: Xử lý lỗi triệt để, trả về trực tiếp dữ liệu ảnh để Nuvio không bị đen
 app.get('/image-proxy', async (req, res) => {
     const imageUrl = req.query.url;
     if (!imageUrl) return res.status(400).send('Missing url');
     try {
         const response = await axios.get(imageUrl, {
             responseType: 'arraybuffer',
-            timeout: 5000,
+            timeout: 4000,
             headers: {
                 'Referer': 'https://ophim1.com/',
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
             }
         });
         res.setHeader('Content-Type', response.headers['content-type'] || 'image/jpeg');
         res.setHeader('Cache-Control', 'public, max-age=86400');
-        res.send(Buffer.from(response.data, 'binary'));
+        return res.send(Buffer.from(response.data, 'binary'));
     } catch (error) {
-        res.redirect('https://image.tmdb.org/t/p/w500/1E5ba88S318X4Pz2goR2vKCoBu.jpg');
+        try {
+            const fallbackRes = await axios.get('https://image.tmdb.org/t/p/w500/1E5ba88S318X4Pz2goR2vKCoBu.jpg', {
+                responseType: 'arraybuffer',
+                timeout: 3000
+            });
+            res.setHeader('Content-Type', 'image/jpeg');
+            res.setHeader('Cache-Control', 'public, max-age=86400');
+            return res.send(Buffer.from(fallbackRes.data, 'binary'));
+        } catch (err) {
+            return res.status(404).send('Not found');
+        }
     }
 });
 
@@ -71,9 +81,9 @@ function getBestPoster(item, req) {
 
 const manifest = {
     id: 'vn.ophim.official.v26',
-    version: '26.4.0',
-    name: 'OPhim (Self Proxy)',
-    description: 'Kho phim OPhim chính hãng, tự chủ proxy ảnh chống nghẽn mạng',
+    version: '26.5.0',
+    name: 'OPhim (Smart Proxy)',
+    description: 'Kho phim OPhim, fix triệt để lỗi màn hình đen ảnh poster',
     resources: ['catalog', 'meta', 'stream'],
     types: ['movie', 'series'],
     idPrefixes: ['op_'],
@@ -288,4 +298,4 @@ app.get('/stream/:type/:id*', async (req, res) => {
 
 app.listen(process.env.PORT || 3000);
 module.exports = app;
-        
+                                
