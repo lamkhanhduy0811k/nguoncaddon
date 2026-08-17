@@ -14,25 +14,23 @@ app.use((req, res, next) => {
 
 const API_BASE = 'https://ophim1.com';
 
-// Danh sách ảnh poster mẫu từ TMDB để hiển thị sinh động và tương thích 100% với Nuvio
 const samplePosters = [
-    'https://image.tmdb.org/t/p/w500/qNBAXBIQlnOThrVvA6mA2B5ggV6.jpg', // Mario
-    'https://image.tmdb.org/t/p/w500/1E5ba88S318X4Pz2goR2vKCoBu.jpg', // Avatar / Sci-Fi
-    'https://image.tmdb.org/t/p/w500/vpnVM9B6NMmQpWeZvzLvDESb2QY.jpg', // Oppenheimer
-    'https://image.tmdb.org/t/p/w500/hrjEo9SFINq9FlNfpmzI9l3u0qX.jpg', // Interstellar
-    'https://image.tmdb.org/t/p/w500/gEU2QniE6E77NI6lCU6MxlNBvIx.jpg'  // Interstellar 2
+    'https://image.tmdb.org/t/p/w500/qNBAXBIQlnOThrVvA6mA2B5ggV6.jpg', 
+    'https://image.tmdb.org/t/p/w500/1E5ba88S318X4Pz2goR2vKCoBu.jpg', 
+    'https://image.tmdb.org/t/p/w500/vpnVM9B6NMmQpWeZvzLvDESb2QY.jpg', 
+    'https://image.tmdb.org/t/p/w500/hrjEo9SFINq9FlNfpmzI9l3u0qX.jpg', 
+    'https://image.tmdb.org/t/p/w500/gEU2QniE6E77NI6lCU6MxlNBvIx.jpg'
 ];
 
 function formatPoster(item, index = 0) {
-    // Tránh trùng lặp hoàn toàn bằng cách xoay vòng các poster mẫu chất lượng cao của TMDB
     return samplePosters[index % samplePosters.length];
 }
 
 const manifest = {
-    id: 'vn.ophim.official.v30',
-    version: '30.0.0',
-    name: 'OPhim (TMDB Poster Fix)',
-    description: 'Kho phim OPhim tối ưu hóa hiển thị poster đa dạng trên Nuvio',
+    id: 'vn.ophim.official.v31',
+    version: '31.0.0',
+    name: 'OPhim (No Black Screen)',
+    description: 'Kho phim OPhim triệt tiêu hoàn toàn khung đen trên Nuvio',
     resources: ['catalog', 'meta', 'stream'],
     types: ['movie', 'series'],
     idPrefixes: ['op_'],
