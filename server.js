@@ -17,32 +17,25 @@ const API_BASE = 'https://ophim1.com';
 function formatPoster(url) {
     if (!url) return 'https://image.tmdb.org/t/p/w500/1E5ba88S318X4Pz2goR2vKCoBu.jpg';
     if (url.startsWith('http://') || url.startsWith('https://')) {
-        return url.replace('http://', 'https://')
-                  .replace('img.ophim.cc', 'img.phimimg.com')
-                  .replace('img.ophim1.com', 'img.phimimg.com');
+        return url.replace('http://', 'https://');
     }
     const cleanUrl = url.replace(/^\/+/, '');
-    if (cleanUrl.startsWith('uploads/')) {
-        return `https://img.phimimg.com/${cleanUrl}`;
-    }
-    return `https://img.phimimg.com/uploads/movies/${cleanUrl}`;
+    return `https://img.ophim1.com/${cleanUrl}`;
 }
 
 function getBestPoster(item) {
+    // Chỉ lấy poster chuẩn từ API, không dùng thumb cắt khung hình từ phim
     if (item.poster_url && item.poster_url.trim() !== '') {
         return formatPoster(item.poster_url);
-    }
-    if (item.thumb_url && item.thumb_url.trim() !== '') {
-        return formatPoster(item.thumb_url);
     }
     return 'https://image.tmdb.org/t/p/w500/1E5ba88S318X4Pz2goR2vKCoBu.jpg';
 }
 
 const manifest = {
-    id: 'vn.nguonc.official.v32',
-    version: '32.0.0',
+    id: 'vn.nguonc.official.v33',
+    version: '33.0.0',
     name: 'Nguồn C',
-    description: 'Kho phim độc quyền đa dạng',
+    description: 'Kho phim độc quyền đa dạng, fix triệt để lỗi ảnh',
     resources: ['catalog', 'meta', 'stream'],
     types: ['movie', 'series'],
     idPrefixes: ['nc_'],
@@ -232,9 +225,9 @@ app.get('/stream/:type/:id*', async (req, res) => {
             ]
         });
     } catch (e) {
-        res.json({ streams: []});
+        res.json({ streams: [] });
     }
 });
 
+app.listen(process.env.PORT || 3000);
 module.exports = app;
-                                                                   
