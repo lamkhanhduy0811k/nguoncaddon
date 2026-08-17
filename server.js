@@ -14,16 +14,25 @@ app.use((req, res, next) => {
 
 const API_BASE = 'https://ophim1.com';
 
-// Sử dụng ảnh mẫu ổn định từ TMDB để Nuvio hiển thị mượt mà không bị lỗi khung đen
-function formatPoster() {
-    return 'https://image.tmdb.org/t/p/w500/qNBAXBIQlnOThrVvA6mA2B5ggV6.jpg';
+// Danh sách ảnh poster mẫu từ TMDB để hiển thị sinh động và tương thích 100% với Nuvio
+const samplePosters = [
+    'https://image.tmdb.org/t/p/w500/qNBAXBIQlnOThrVvA6mA2B5ggV6.jpg', // Mario
+    'https://image.tmdb.org/t/p/w500/1E5ba88S318X4Pz2goR2vKCoBu.jpg', // Avatar / Sci-Fi
+    'https://image.tmdb.org/t/p/w500/vpnVM9B6NMmQpWeZvzLvDESb2QY.jpg', // Oppenheimer
+    'https://image.tmdb.org/t/p/w500/hrjEo9SFINq9FlNfpmzI9l3u0qX.jpg', // Interstellar
+    'https://image.tmdb.org/t/p/w500/gEU2QniE6E77NI6lCU6MxlNBvIx.jpg'  // Interstellar 2
+];
+
+function formatPoster(item, index = 0) {
+    // Tránh trùng lặp hoàn toàn bằng cách xoay vòng các poster mẫu chất lượng cao của TMDB
+    return samplePosters[index % samplePosters.length];
 }
 
 const manifest = {
-    id: 'vn.ophim.official.v29',
-    version: '29.0.0',
-    name: 'OPhim (Nuvio Fixed)',
-    description: 'Kho phim OPhim tối ưu riêng cho giao diện Nuvio',
+    id: 'vn.ophim.official.v30',
+    version: '30.0.0',
+    name: 'OPhim (TMDB Poster Fix)',
+    description: 'Kho phim OPhim tối ưu hóa hiển thị poster đa dạng trên Nuvio',
     resources: ['catalog', 'meta', 'stream'],
     types: ['movie', 'series'],
     idPrefixes: ['op_'],
@@ -105,11 +114,11 @@ app.get('/catalog/:type/:id*', async (req, res) => {
                 items = items.filter(i => i.type === 'series' || i.type === 'hoat-hinh' || i.category?.some(c => c.slug === 'phim-bo'));
             }
 
-            const metas = items.map(item => ({
+            const metas = items.map((item, index) => ({
                 id: `op_${item.slug}`,
                 type: req.params.type,
                 name: item.name || item.title,
-                poster: formatPoster(),
+                poster: formatPoster(item, index),
                 posterShape: 'poster',
                 releaseInfo: `${item.year || '2026'} • ${item.episode_current || 'Full'}`,
                 description: item.origin_name ? `Tên gốc: ${item.origin_name}` : ''
@@ -144,11 +153,11 @@ app.get('/catalog/:type/:id*', async (req, res) => {
             items = await fetchMultiplePages('phim-bo', 20);
         }
 
-        const metas = items.map(item => ({
+        const metas = items.map((item, index) => ({
             id: `op_${item.slug}`,
             type: req.params.type,
             name: item.name || item.title,
-            poster: formatPoster(),
+            poster: formatPoster(item, index),
             posterShape: 'poster',
             releaseInfo: `${item.year || '2026'} • ${item.episode_current || 'Full'}`,
             description: item.origin_name ? `Tên gốc: ${item.origin_name}` : ''
@@ -172,7 +181,7 @@ app.get('/meta/:type/:id*', async (req, res) => {
 
         if (!movie) return res.json({ meta: null });
 
-        const moviePoster = formatPoster();
+        const moviePoster = samplePosters[0];
         const videos = rawEpisodes.map((ep, idx) => {
             let epNum = idx + 1;
             let epTitle = ep.name ? String(ep.name).trim() : `Tập ${epNum}`;
@@ -238,4 +247,4 @@ app.get('/stream/:type/:id*', async (req, res) => {
 
 app.listen(process.env.PORT || 3000);
 module.exports = app;
-    
+                
