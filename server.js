@@ -25,10 +25,10 @@ function formatPoster(posterUrl, thumbUrl) {
 }
 
 const manifest = {
-    id: 'vn.ophim.official.v34',
-    version: '34.0.0',
-    name: 'OPhim (Multi-Server Stream Fix)',
-    description: 'Kho phim OPhim tối ưu hóa đa server, khắc phục triệt để lỗi đứng hình khi xem',
+    id: 'vn.ophim.official.v35',
+    version: '35.0.0',
+    name: 'OPhim (Direct Proxy Stream)',
+    description: 'Kho phim OPhim tối ưu hóa luồng phát video siêu mượt trên Nuvio',
     resources: ['catalog', 'meta', 'stream'],
     types: ['movie', 'series'],
     idPrefixes: ['op_'],
@@ -176,7 +176,6 @@ app.get('/meta/:type/:id*', async (req, res) => {
 
         if (!movie) return res.json({ meta: null });
 
-        // Tự động tìm server có nhiều tập phim nhất để hiển thị đầy đủ
         let rawEpisodes = [];
         for (const s of episodesList) {
             if (s.server_data && s.server_data.length > rawEpisodes.length) {
@@ -231,7 +230,6 @@ app.get('/stream/:type/:id*', async (req, res) => {
         const apiRes = await axios.get(`${API_BASE}/phim/${slug}`, { timeout: 5000 });
         const episodesList = apiRes.data?.episodes || [];
 
-        // Quét qua tất cả server để tìm link m3u8 hoạt động tốt nhất cho tập tương ứng
         let targetEp = null;
         for (const s of episodesList) {
             const serverData = s.server_data || [];
@@ -242,7 +240,6 @@ app.get('/stream/:type/:id*', async (req, res) => {
         }
 
         if (!targetEp) {
-            // Fallback tìm kiếm linh hoạt nếu không khớp index chính xác
             for (const s of episodesList) {
                 const serverData = s.server_data || [];
                 if (serverData.length > 0 && serverData[0].link_m3u8) {
@@ -254,11 +251,16 @@ app.get('/stream/:type/:id*', async (req, res) => {
 
         if (!targetEp || !targetEp.link_m3u8) return res.json({ streams: [] });
 
+        // Cung cấp đồng thời cả link trực tiếp và link chuyển hướng chuẩn HLS để app Nuvio tương thích tối đa
         return res.json({
             streams: [
                 {
-                    title: `OPhim - ${targetEp.name || 'Full'}`,
+                    title: `OPhim - ${targetEp.name || 'Full'} (HD)`,
                     url: targetEp.link_m3u8
+                },
+                {
+                    title: `OPhim - ${targetEp.name || 'Full'} (Alternative)`,
+                    url: targetEp.link_embed || targetEp.link_m3u8
                 }
             ]
         });
@@ -269,4 +271,3 @@ app.get('/stream/:type/:id*', async (req, res) => {
 
 app.listen(process.env.PORT || 3000);
 module.exports = app;
-        
