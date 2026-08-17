@@ -13,18 +13,19 @@ app.use((req, res, next) => {
 });
 
 const API_BASE = 'https://ophim1.com';
+const CDN_URL = 'https://img.ophim.cc/uploads/movies/';
 
 function formatPoster(url) {
     if (!url) return 'https://image.tmdb.org/t/p/w500/1E5ba88S318X4Pz2goR2vKCoBu.jpg';
     if (url.startsWith('http')) return url;
-    return `https://img.ophim.cc/uploads/movies/${url}`;
+    return `${CDN_URL}${url}`;
 }
 
 const manifest = {
-    id: 'vn.nguonc.official.v21',
-    version: '21.0.0',
+    id: 'vn.nguonc.official.v22',
+    version: '22.0.0',
     name: 'Nguồn C',
-    description: 'Kho phim độc quyền chất lượng cao',
+    description: 'Kho phim độc quyền đa dạng, chất lượng cao',
     resources: ['catalog', 'meta', 'stream'],
     types: ['movie', 'series'],
     idPrefixes: ['nc_'],
@@ -40,12 +41,42 @@ const manifest = {
             id: 'phim_le',
             name: 'Nguồn C - Phim Lẻ',
             extra: [{ name: 'search', isRequired: false }]
+        },
+        {
+            type: 'series',
+            id: 'anime',
+            name: 'Nguồn C - Hoạt Hình Nhật (Anime)',
+            extra: [{ name: 'search', isRequired: false }]
+        },
+        {
+            type: 'series',
+            id: 'hoat_hinh_3d',
+            name: 'Nguồn C - Hoạt Hình 3D Trung Quốc',
+            extra: [{ name: 'search', isRequired: false }]
         }
     ]
 };
 
 app.get('/', (req, res) => res.json(manifest));
 app.get('/manifest.json', (req, res) => res.json(manifest));
+
+// Lấy danh sách phim khoảng 500 bộ (tải song song nhiều trang)
+async function fetchMultiplePages(typePath, maxPages = 20) {
+    let allItems = [];
+    let promises = [];
+    for (let p = 1; p <= maxPages; p++) {
+        promises.push(
+            axios.get(`${API_BASE}/v1/api/danh-sach/${typePath}?page=${p}`, { timeout: 4000 })
+                .then(res => res.data?.data?.items || [])
+                .catch(() => [])
+        );
+    }
+    const results = await Promise.all(promises);
+    results.forEach(items => {
+        allItems = allItems.concat(items);
+    });
+    return allItems;
+}
 
 app.get('/catalog/:type/:id*', async (req, res) => {
     let rawId = req.params.id + (req.params[0] || '');
@@ -56,7 +87,7 @@ app.get('/catalog/:type/:id*', async (req, res) => {
         const keyword = queryMatch ? decodeURIComponent(queryMatch[1]) : '';
 
         try {
-            const apiRes = await axios.get(`${API_BASE}/v1/api/tim-kiem?keyword=${encodeURIComponent(keyword)}&limit=50`, { timeout: 5000 });
+            const apiRes = await axios.get(`${API_BASE}/v1/api/tim-kiem?keyword=${encodeURIComponent(keyword)}&limit=100`, { timeout: 5000 });
             const items = apiRes.data?.data?.items || [];
             const metas = items.map(item => ({
                 id: `nc_${item.slug}`,
@@ -73,14 +104,30 @@ app.get('/catalog/:type/:id*', async (req, res) => {
         }
     }
 
-    let typePath = 'phim-bo';
-    if (rawId.startsWith('phim_le')) {
-        typePath = 'phim-le';
-    }
-
     try {
-        const apiRes = await axios.get(`${API_BASE}/v1/api/danh-sach/${typePath}?limit=50`, { timeout: 5000 });
-        const items = apiRes.data?.data?.items || [];
+        let items = [];
+        if (rawId.startsWith('phim_le')) {
+            items = await fetchMultiplePages('phim-le', 25);
+        } else if (rawId.startsWith('anime')) {
+            const rawAnime = await fetchMultiplePages('hoat-hinh', 15);
+            // Lọc các phim hoạt hình có quốc gia Nhật Bản hoặc tên liên quan Anime
+            items = rawAnime.filter(i => {
+                const name = (i.name + ' ' + (i.origin_name || '')).toLowerCase();
+                return name.includes('nhật') || name.includes('japan') || i.category?.some(c => c.slug === 'hoat-hinh' && (c.name?.toLowerCase().includes('nhật') || c.slug?.includes('nhat')));
+            });
+            if (items.length === 0) items = rawAnime; // Fallback nếu không khớp lọc
+        } else if (rawId.startsWith('hoat_hinh_3d')) {
+            const rawHH = await fetchMultiplePages('hoat-hinh', 20);
+            // Lọc hoạt hình Trung Quốc / 3D
+            items = rawHH.filter(i => {
+                const name = (i.name + ' ' + (i.origin_name || '')).toLowerCase();
+                return name.includes('trung quốc') || name.includes('china') || name.includes('3d') || i.country?.some(c => c.slug === 'trung-quoc');
+            });
+            if (items.length === 0) items = rawHH;
+        } else {
+            items = await fetchMultiplePages('phim-bo', 20);
+        }
+
         const metas = items.map(item => ({
             id: `nc_${item.slug}`,
             type: req.params.type,
@@ -90,6 +137,7 @@ app.get('/catalog/:type/:id*', async (req, res) => {
             releaseInfo: `${item.year || '2026'} • ${item.episode_current || 'Full'}`,
             description: item.origin_name ? `Tên gốc: ${item.origin_name}` : ''
         }));
+
         return res.json({ metas });
     } catch (e) {
         return res.json({ metas: [] });
@@ -168,9 +216,9 @@ app.get('/stream/:type/:id*', async (req, res) => {
             ]
         });
     } catch (e) {
-        return res.json({ streams: [] });
+        res.json({ streams: [] });
     }
 });
 
 module.exports = app;
-            
+                
