@@ -26,7 +26,6 @@ function formatPoster(url) {
     return `https://img.ophim1.com/uploads/movies/${cleanUrl}`;
 }
 
-// Hàm ưu tiên lấy poster chuẩn dọc chính thức trước, nếu không có mới lấy thumb
 function getBestPoster(item) {
     if (item.poster_url && item.poster_url.trim() !== '') {
         return formatPoster(item.poster_url);
@@ -38,8 +37,8 @@ function getBestPoster(item) {
 }
 
 const manifest = {
-    id: 'vn.nguonc.official.v25',
-    version: '25.0.0',
+    id: 'vn.nguonc.official.v26',
+    version: '26.0.0',
     name: 'Nguồn C',
     description: 'Kho phim độc quyền đa dạng, poster chuẩn rạp',
     resources: ['catalog', 'meta', 'stream'],
@@ -124,21 +123,24 @@ app.get('/catalog/:type/:id*', async (req, res) => {
         if (rawId.startsWith('phim_le')) {
             items = await fetchMultiplePages('phim-le', 25);
         } else if (rawId.startsWith('anime')) {
-            const rawAnime = await fetchMultiplePages('hoat-hinh', 15);
+            // Tăng số trang lên 40 để Anime có số lượng phim khủng ngang ngửa các mục khác
+            const rawAnime = await fetchMultiplePages('hoat-hinh', 40);
             items = rawAnime.filter(i => {
                 const name = (i.name + ' ' + (i.origin_name || '')).toLowerCase();
-                return name.includes('nhật') || name.includes('japan') || i.category?.some(c => c.slug === 'hoat-hinh' && (c.name?.toLowerCase().includes('nhật') || c.slug?.includes('nhat')));
+                const countrySlug = i.country?.map(c => c.slug).join(' ') || '';
+                return name.includes('nhật') || name.includes('japan') || countrySlug.includes('nhat-ban') || i.category?.some(c => c.slug === 'hoat-hinh' && (c.name?.toLowerCase().includes('nhật') || c.slug?.includes('nhat')));
             });
-            if (items.length === 0) items = rawAnime;
+            if (items.length < 50) items = rawAnime;
         } else if (rawId.startsWith('hoat_hinh_3d')) {
-            const rawHH = await fetchMultiplePages('hoat-hinh', 20);
+            const rawHH = await fetchMultiplePages('hoat-hinh', 35);
             items = rawHH.filter(i => {
                 const name = (i.name + ' ' + (i.origin_name || '')).toLowerCase();
-                return name.includes('trung quốc') || name.includes('china') || name.includes('3d') || i.country?.some(c => c.slug === 'trung-quoc');
+                const countrySlug = i.country?.map(c => c.slug).join(' ') || '';
+                return name.includes('trung quốc') || name.includes('china') || name.includes('3d') || countrySlug.includes('trung-quoc');
             });
-            if (items.length === 0) items = rawHH;
+            if (items.length < 50) items = rawHH;
         } else {
-            items = await fetchMultiplePages('phim-bo', 20);
+            items = await fetchMultiplePages('phim-bo', 25);
         }
 
         const metas = items.map(item => ({
@@ -234,4 +236,4 @@ app.get('/stream/:type/:id*', async (req, res) => {
 });
 
 module.exports = app;
-                
+    
