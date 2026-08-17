@@ -17,13 +17,15 @@ const API_BASE = 'https://ophim1.com';
 function formatPoster(url) {
     if (!url) return 'https://image.tmdb.org/t/p/w500/1E5ba88S318X4Pz2goR2vKCoBu.jpg';
     if (url.startsWith('http://') || url.startsWith('https://')) {
-        return url;
+        return url.replace('img.ophim.cc', 'img.phimimg.com')
+                  .replace('img.ophim1.com', 'img.phimimg.com')
+                  .replace('ophim1.com/uploads', 'img.phimimg.com/uploads');
     }
     const cleanUrl = url.replace(/^\//, '');
     if (cleanUrl.startsWith('uploads/')) {
-        return `https://img.ophim1.com/${cleanUrl}`;
+        return `https://img.phimimg.com/${cleanUrl}`;
     }
-    return `https://img.ophim1.com/uploads/movies/${cleanUrl}`;
+    return `https://img.phimimg.com/uploads/movies/${cleanUrl}`;
 }
 
 function getBestPoster(item) {
@@ -37,10 +39,10 @@ function getBestPoster(item) {
 }
 
 const manifest = {
-    id: 'vn.nguonc.official.v26',
-    version: '26.0.0',
+    id: 'vn.nguonc.official.v27',
+    version: '27.0.0',
     name: 'Nguồn C',
-    description: 'Kho phim độc quyền đa dạng, poster chuẩn rạp',
+    description: 'Kho phim độc quyền đa dạng, poster chuẩn phimimg',
     resources: ['catalog', 'meta', 'stream'],
     types: ['movie', 'series'],
     idPrefixes: ['nc_'],
@@ -123,7 +125,6 @@ app.get('/catalog/:type/:id*', async (req, res) => {
         if (rawId.startsWith('phim_le')) {
             items = await fetchMultiplePages('phim-le', 25);
         } else if (rawId.startsWith('anime')) {
-            // Tăng số trang lên 40 để Anime có số lượng phim khủng ngang ngửa các mục khác
             const rawAnime = await fetchMultiplePages('hoat-hinh', 40);
             items = rawAnime.filter(i => {
                 const name = (i.name + ' ' + (i.origin_name || '')).toLowerCase();
@@ -236,4 +237,4 @@ app.get('/stream/:type/:id*', async (req, res) => {
 });
 
 module.exports = app;
-    
+                                                                                                                                                               
