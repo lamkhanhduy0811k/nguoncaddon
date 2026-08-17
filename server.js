@@ -22,8 +22,8 @@ function fixUrl(url) {
 }
 
 const manifest = {
-    id: 'com.nguonc.v5',
-    version: '1.0.8',
+    id: 'com.nguonc.v6',
+    version: '1.0.9',
     name: 'Siêu Tầm Phim (Nguồn C)',
     description: 'Xem phim Vietsub/Thuyết minh từ Nguồn C',
     resources: ['catalog', 'meta', 'stream'],
@@ -43,46 +43,60 @@ const manifest = {
     ]
 };
 
-app.get('/', (req, res) => res.json({ status: 'Online', manifest: '/manifest.json' }));
+app.get('/', (req, res) => res.json({ status: 'Online' }));
 app.get('/manifest.json', (req, res) => res.json(manifest));
 
 // Catalog Route
 app.get('/catalog/:type/:id*', async (req, res) => {
+    const type = req.params.type;
+    let metas = [];
+
     try {
-        const type = req.params.type;
         const resApi = await fetch(`${NGUONC_API}/films/phim-moi-cap-nhat?page=1`, {
             headers: {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
                 'Accept': 'application/json'
             }
         });
-        
-        const data = await resApi.json();
-        const items = data?.items || [];
 
-        const metas = items.map(item => ({
-            id: `nguonc_${item.slug}`,
-            type: type === 'series' ? 'series' : 'movie',
-            name: item.name || 'Phim',
-            poster: fixUrl(item.thumb_url || item.poster_url),
-            posterShape: 'poster',
-            description: item.original_name ? `Tên gốc: ${item.original_name}` : ''
-        }));
-
-        res.json({ metas });
+        if (resApi.ok) {
+            const data = await resApi.json();
+            const items = data?.items || [];
+            metas = items.map(item => ({
+                id: `nguonc_${item.slug}`,
+                type: type === 'series' ? 'series' : 'movie',
+                name: item.name || 'Phim Nguồn C',
+                poster: fixUrl(item.thumb_url || item.poster_url),
+                posterShape: 'poster',
+                description: item.original_name ? `Tên gốc: ${item.original_name}` : ''
+            }));
+        }
     } catch (e) {
-        res.json({ metas: [], debug_error: e.message });
+        console.error(e);
     }
+
+    // Nếu API bị chặn IP, tự thêm 1 item giả lập để kiểm tra Nuvio
+    if (metas.length === 0) {
+        metas.push({
+            id: 'nguonc_test_item',
+            type: type === 'series' ? 'series' : 'movie',
+            name: '[TEST] Server Vercel Kết Nối Thành Công',
+            poster: 'https://via.placeholder.com/300x450/000000/FFFFFF?text=TEST+OK',
+            posterShape: 'poster',
+            description: 'Vercel hoạt động tốt nhưng Nguồn C đang chặn IP server.'
+        });
+    }
+
+    res.json({ metas });
 });
 
 // Meta Route
 app.get('/meta/:type/:id*', async (req, res) => {
     try {
         let rawId = req.params.id + (req.params[0] || '');
-        rawId = rawId.replace('.json', '');
-        const slug = rawId.replace('nguonc_', '');
+        rawId = rawId.replace('.json', '').replace('nguonc_', '');
 
-        const resApi = await fetch(`${NGUONC_API}/film/${slug}`);
+        const resApi = await fetch(`${NGUONC_API}/film/${rawId}`);
         const data = await resApi.json();
         const movie = data?.movie;
 
@@ -108,10 +122,9 @@ app.get('/meta/:type/:id*', async (req, res) => {
 app.get('/stream/:type/:id*', async (req, res) => {
     try {
         let rawId = req.params.id + (req.params[0] || '');
-        rawId = rawId.replace('.json', '');
-        const cleanId = rawId.replace('nguonc_', '');
+        rawId = rawId.replace('.json', '').replace('nguonc_', '');
 
-        const parts = cleanId.split(':');
+        const parts = rawId.split(':');
         const slug = parts[0];
         const epIndex = parts[1] ? parseInt(parts[1]) - 1 : 0;
 
@@ -138,3 +151,4 @@ app.get('/stream/:type/:id*', async (req, res) => {
 });
 
 module.exports = app;
+                                     
