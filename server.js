@@ -14,14 +14,34 @@ app.use((req, res, next) => {
 
 const API_BASE = 'https://ophim1.com';
 
-function formatPoster(url) {
+// Endpoint Proxy: Tải ảnh qua server Vercel để vượt tường lửa mạng tại Việt Nam
+app.get('/proxy', async (req, res) => {
+    const imageUrl = req.query.url;
+    if (!imageUrl) return res.status(400).send('Missing url');
+    try {
+        const response = await axios.get(imageUrl, {
+            responseType: 'arraybuffer',
+            timeout: 6000,
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
+                'Referer': 'https://ophim1.com'
+            }
+        });
+        res.setHeader('Content-Type', response.headers['content-type'] || 'image/jpeg');
+        res.setHeader('Cache-Control', 'public, max-age=604800'); // Cache 7 ngày
+        return res.send(Buffer.from(response.data));
+    } catch (error) {
+        // Fallback về ảnh mặc định nếu lỗi
+        return res.redirect('https://image.tmdb.org/t/p/w500/1E5ba88S318X4Pz2goR2vKCoBu.jpg');
+    }
+});
+
+function formatPoster(url, host = 'nguoncaddon.vercel.app') {
     if (!url || typeof url !== 'string') {
         return 'https://image.tmdb.org/t/p/w500/1E5ba88S318X4Pz2goR2vKCoBu.jpg';
     }
     
     let cleanUrl = url.trim();
-    
-    // Xử lý triệt để trường hợp URL bị dính nhiều http/https hoặc lặp domain
     if (cleanUrl.includes('http://') || cleanUrl.includes('https://')) {
         const parts = cleanUrl.split(/https?:\/\//);
         cleanUrl = 'https://' + parts[parts.length - 1];
@@ -33,34 +53,29 @@ function formatPoster(url) {
         cleanUrl = `https://img.phimimg.com/${cleanUrl}`;
     }
 
-    // Chuẩn hóa toàn bộ domain cũ về domain CDN mới nhất
     cleanUrl = cleanUrl
         .replace('img.ophim.cc', 'img.phimimg.com')
-        .replace('img.ophim1.com', 'img.phimimg.com')
-        .replace('ophim1.com/uploads', 'img.phimimg.com/uploads');
+        .replace('img.ophim1.com', 'img.phimimg.com');
 
-    // Loại bỏ dấu gạch chéo kép thừa trong đường dẫn
-    cleanUrl = cleanUrl.replace(/([^:]\/)\/+/g, '$1');
-
-    // Sử dụng Image Proxy wsrv.nl với tùy chọn bóp khung chuẩn poster giúp Nuvio render mượt mà tuyệt đối
-    return `https://wsrv.nl/?url=${encodeURIComponent(cleanUrl)}&w=400&h=600&fit=cover&output=jpg`;
+    // Chuyển hướng ảnh qua chính server Vercel của bạn làm Proxy
+    return `https://${host}/proxy?url=${encodeURIComponent(cleanUrl)}`;
 }
 
-function getBestPoster(item) {
+function getBestPoster(item, host) {
     if (item.poster_url && item.poster_url.trim() !== '') {
-        return formatPoster(item.poster_url);
+        return formatPoster(item.poster_url, host);
     }
     if (item.thumb_url && item.thumb_url.trim() !== '') {
-        return formatPoster(item.thumb_url);
+        return formatPoster(item.thumb_url, host);
     }
     return 'https://image.tmdb.org/t/p/w500/1E5ba88S318X4Pz2goR2vKCoBu.jpg';
 }
 
 const manifest = {
-    id: 'vn.nguonc.official.v35',
-    version: '35.0.0',
-    name: 'Nguồn C (Ultra)',
-    description: 'Kho phim độc quyền đa dạng, fix triệt để lỗi ảnh',
+    id: 'vn.nguonc.official.v36',
+    version: '36.0.0',
+    name: 'Nguồn C (Proxy Pro)',
+    description: 'Kho phim độc quyền đa dạng, fix triệt để lỗi ảnh bằng Proxy riêng',
     resources: ['catalog', 'meta', 'stream'],
     types: ['movie', 'series'],
     idPrefixes: ['nc_'],
@@ -113,6 +128,7 @@ async function fetchMultiplePages(typePath, maxPages = 20) {
 }
 
 app.get('/catalog/:type/:id*', async (req, res) => {
+    const host = req.get('host') || 'nguoncaddon.vercel.app';
     let rawId = req.params.id + (req.params[0] || '');
     rawId = rawId.replace('.json', '');
 
@@ -127,7 +143,7 @@ app.get('/catalog/:type/:id*', async (req, res) => {
                 id: `nc_${item.slug}`,
                 type: req.params.type,
                 name: item.name || item.title,
-                poster: getBestPoster(item),
+                poster: getBestPoster(item, host),
                 posterShape: 'poster',
                 releaseInfo: `${item.year || '2026'} • ${item.episode_current || 'Full'}`,
                 description: item.origin_name ? `Tên gốc: ${item.origin_name}` : ''
@@ -166,7 +182,7 @@ app.get('/catalog/:type/:id*', async (req, res) => {
             id: `nc_${item.slug}`,
             type: req.params.type,
             name: item.name || item.title,
-            poster: getBestPoster(item),
+            poster: getBestPoster(item, host),
             posterShape: 'poster',
             releaseInfo: `${item.year || '2026'} • ${item.episode_current || 'Full'}`,
             description: item.origin_name ? `Tên gốc: ${item.origin_name}` : ''
@@ -180,6 +196,7 @@ app.get('/catalog/:type/:id*', async (req, res) => {
 
 app.get('/meta/:type/:id*', async (req, res) => {
     try {
+        const host = req.get('host') || 'nguoncaddon.vercel.app';
         let rawId = req.params.id + (req.params[0] || '');
         const slug = rawId.replace('.json', '').replace('nc_', '');
 
@@ -190,7 +207,7 @@ app.get('/meta/:type/:id*', async (req, res) => {
 
         if (!movie) return res.json({ meta: null });
 
-        const moviePoster = getBestPoster(movie);
+        const moviePoster = getBestPoster(movie, host);
         const videos = rawEpisodes.map((ep, idx) => {
             let epNum = idx + 1;
             let epTitle = ep.name ? String(ep.name).trim() : `Tập ${epNum}`;
@@ -256,3 +273,4 @@ app.get('/stream/:type/:id*', async (req, res) => {
 
 app.listen(process.env.PORT || 3000);
 module.exports = app;
+            
