@@ -26,11 +26,22 @@ function formatPoster(url) {
     return `https://img.ophim1.com/uploads/movies/${cleanUrl}`;
 }
 
+// Hàm ưu tiên lấy poster chuẩn dọc chính thức trước, nếu không có mới lấy thumb
+function getBestPoster(item) {
+    if (item.poster_url && item.poster_url.trim() !== '') {
+        return formatPoster(item.poster_url);
+    }
+    if (item.thumb_url && item.thumb_url.trim() !== '') {
+        return formatPoster(item.thumb_url);
+    }
+    return 'https://image.tmdb.org/t/p/w500/1E5ba88S318X4Pz2goR2vKCoBu.jpg';
+}
+
 const manifest = {
-    id: 'vn.nguonc.official.v24',
-    version: '24.0.0',
+    id: 'vn.nguonc.official.v25',
+    version: '25.0.0',
     name: 'Nguồn C',
-    description: 'Kho phim độc quyền đa dạng, chất lượng cao',
+    description: 'Kho phim độc quyền đa dạng, poster chuẩn rạp',
     resources: ['catalog', 'meta', 'stream'],
     types: ['movie', 'series'],
     idPrefixes: ['nc_'],
@@ -97,7 +108,7 @@ app.get('/catalog/:type/:id*', async (req, res) => {
                 id: `nc_${item.slug}`,
                 type: req.params.type,
                 name: item.name || item.title,
-                poster: formatPoster(item.poster_url || item.thumb_url),
+                poster: getBestPoster(item),
                 posterShape: 'poster',
                 releaseInfo: `${item.year || '2026'} • ${item.episode_current || 'Full'}`,
                 description: item.origin_name ? `Tên gốc: ${item.origin_name}` : ''
@@ -134,7 +145,7 @@ app.get('/catalog/:type/:id*', async (req, res) => {
             id: `nc_${item.slug}`,
             type: req.params.type,
             name: item.name || item.title,
-            poster: formatPoster(item.poster_url || item.thumb_url),
+            poster: getBestPoster(item),
             posterShape: 'poster',
             releaseInfo: `${item.year || '2026'} • ${item.episode_current || 'Full'}`,
             description: item.origin_name ? `Tên gốc: ${item.origin_name}` : ''
@@ -158,7 +169,7 @@ app.get('/meta/:type/:id*', async (req, res) => {
 
         if (!movie) return res.json({ meta: null });
 
-        const movieThumb = formatPoster(movie.thumb_url || movie.poster_url);
+        const moviePoster = getBestPoster(movie);
         const videos = rawEpisodes.map((ep, idx) => {
             let epNum = idx + 1;
             let epTitle = ep.name ? String(ep.name).trim() : `Tập ${epNum}`;
@@ -168,7 +179,7 @@ app.get('/meta/:type/:id*', async (req, res) => {
             return {
                 id: `nc_${slug}:${idx + 1}`,
                 title: epTitle,
-                thumbnail: movieThumb,
+                thumbnail: moviePoster,
                 released: new Date().toISOString(),
                 season: 1,
                 episode: epNum
@@ -180,8 +191,8 @@ app.get('/meta/:type/:id*', async (req, res) => {
                 id: `nc_${slug}`,
                 type: req.params.type,
                 name: movie.name || movie.title,
-                poster: formatPoster(movie.poster_url || movie.thumb_url),
-                background: movieThumb,
+                poster: moviePoster,
+                background: moviePoster,
                 description: movie.content ? movie.content.replace(/<[^>]*>?/gm, '') : '',
                 year: String(movie.year || '2026'),
                 releaseInfo: `${movie.year || '2026'} • ${movie.episode_current || 'Full'}`,
@@ -223,3 +234,4 @@ app.get('/stream/:type/:id*', async (req, res) => {
 });
 
 module.exports = app;
+                
