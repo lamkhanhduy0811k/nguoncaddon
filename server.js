@@ -13,24 +13,24 @@ app.use((req, res, next) => {
 });
 
 const NGUONC_API = 'https://phim.nguonc.com/api';
+const FALLBACK_POSTER = 'https://image.tmdb.org/t/p/w500/1E5ba88S318X4Pz2goR2vKCoBu.jpg';
 
-// Chuyển đổi link poster qua Jetpack CDN (Bao mượt tại Việt Nam, 100% không bị đen)
+// Xử lý ảnh bằng Cloudflare Proxy (wsrv.nl) - Giải quyết dứt điểm khung xám
 function fixPoster(url) {
-    if (!url) return 'https://i0.wp.com/phim.nguonc.com/uploads/movies/trong-khi-thumb.jpg';
+    if (!url) return FALLBACK_POSTER;
     let clean = String(url).trim();
     if (clean.startsWith('//')) clean = 'https:' + clean;
     if (clean.startsWith('http://')) clean = clean.replace('http://', 'https://');
     if (!clean.startsWith('http')) {
         clean = 'https://phim.nguonc.com' + (clean.startsWith('/') ? '' : '/') + clean;
     }
-    const domainAndPath = clean.replace(/^https?:\/\//, '');
-    return `https://i0.wp.com/${domainAndPath}`;
+    return `https://wsrv.nl/?url=${encodeURIComponent(clean)}&w=300&h=450&fit=cover&output=jpg`;
 }
 
-// Manifest v4.0.0 ép Nuvio tải lại bộ nhớ đệm
+// Manifest v5.0.0 buộc Nuvio làm sạch hoàn toàn cache cũ
 const manifest = {
-    id: 'com.nguonc.phim.v40',
-    version: '4.0.0',
+    id: 'com.nguonc.phim.v50',
+    version: '5.0.0',
     name: 'Siêu Tầm Phim (Nguồn C)',
     description: 'Xem phim Vietsub/Thuyết minh từ Nguồn C',
     resources: ['catalog', 'meta', 'stream'],
@@ -53,7 +53,7 @@ const manifest = {
 app.get('/', (req, res) => res.json(manifest));
 app.get('/manifest.json', (req, res) => res.json(manifest));
 
-// Lấy danh sách phim từ API
+// Lấy danh sách phim từ API Nguồn C
 async function fetchFilms(type) {
     const endpoint = type === 'series' 
         ? '/films/danh-sach/phim-bo?page=1' 
