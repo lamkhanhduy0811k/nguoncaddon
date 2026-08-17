@@ -14,25 +14,27 @@ app.use((req, res, next) => {
 
 const API_BASE = 'https://ophim1.com';
 
+// Hàm xử lý ảnh chuẩn, dùng Proxy quốc tế để vượt tường lửa chặn mạng tại Việt Nam
 function formatPoster(url) {
     if (!url || typeof url !== 'string' || url.trim() === '') {
         return 'https://image.tmdb.org/t/p/w500/1E5ba88S318X4Pz2goR2vKCoBu.jpg';
     }
     
     let cleanUrl = url.trim();
-    if (cleanUrl.startsWith('http://') || cleanUrl.startsWith('https://')) {
-        cleanUrl = cleanUrl.replace('http://', 'https://');
-        cleanUrl = cleanUrl.replace('img.ophim.cc', 'img.phimimg.com');
-        cleanUrl = cleanUrl.replace('img.ophim1.com', 'img.phimimg.com');
-        return cleanUrl;
+    cleanUrl = cleanUrl.replace(/^https?:\/\//i, '');
+    cleanUrl = cleanUrl.replace('img.ophim.cc', 'img.phimimg.com');
+    cleanUrl = cleanUrl.replace('img.ophim1.com', 'img.phimimg.com');
+    
+    if (!cleanUrl.includes('img.phimimg.com') && !cleanUrl.includes('image.tmdb.org')) {
+        cleanUrl = cleanUrl.replace(/^\/+/, '');
+        if (!cleanUrl.startsWith('uploads/')) {
+            cleanUrl = `uploads/movies/${cleanUrl}`;
+        }
+        cleanUrl = `img.phimimg.com/${cleanUrl}`;
     }
     
-    cleanUrl = cleanUrl.replace(/^\/+/, '');
-    if (!cleanUrl.startsWith('uploads/')) {
-        cleanUrl = `uploads/movies/${cleanUrl}`;
-    }
-    
-    return `https://img.phimimg.com/${cleanUrl}`;
+    // Đưa qua CDN Proxy để bypass hoàn toàn lỗi đen ảnh tại VN
+    return `https://images.weserv.nl/?url=https://${encodeURIComponent(cleanUrl)}&w=400&h=600&fit=cover&output=jpg&n=-1`;
 }
 
 function getBestPoster(item) {
@@ -47,9 +49,9 @@ function getBestPoster(item) {
 
 const manifest = {
     id: 'vn.nguonc.official.v26',
-    version: '26.1.0',
-    name: 'Nguồn C (Bản Chuẩn)',
-    description: 'Kho phim độc quyền, fix tìm kiếm hiển thị chuẩn xác',
+    version: '26.2.0',
+    name: 'Nguồn C (Bản Chuẩn - Fix Ảnh)',
+    description: 'Kho phim độc quyền, fix triệt để lỗi đen ảnh và tìm kiếm',
     resources: ['catalog', 'meta', 'stream'],
     types: ['movie', 'series'],
     idPrefixes: ['nc_'],
@@ -113,7 +115,6 @@ app.get('/catalog/:type/:id*', async (req, res) => {
             const apiRes = await axios.get(`${API_BASE}/v1/api/tim-kiem?keyword=${encodeURIComponent(keyword)}&limit=100`, { timeout: 5000 });
             let items = apiRes.data?.data?.items || [];
 
-            // Lọc kết quả tìm kiếm theo từng danh mục để hiển thị chuẩn xác
             if (rawId.includes('phim_le')) {
                 items = items.filter(i => i.type === 'single' || i.category?.some(c => c.slug === 'phim-le'));
             } else if (rawId.includes('anime')) {
@@ -265,4 +266,4 @@ app.get('/stream/:type/:id*', async (req, res) => {
 
 app.listen(process.env.PORT || 3000);
 module.exports = app;
-                
+            
