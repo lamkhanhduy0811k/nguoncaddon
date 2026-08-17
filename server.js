@@ -23,10 +23,10 @@ function formatPoster(url) {
     return `${CDN_IMAGE}/${url.replace(/^\//, '')}`;
 }
 
-// Manifest v15.0.0 - Đổi ID để ép Nuvio nhận tên mới "Nguồn C"
+// Manifest v17.0.0 - Cập nhật hiển thị ảnh tập phim và tối ưu giao diện TV
 const manifest = {
-    id: 'com.nguonc.official.v15',
-    version: '15.0.0',
+    id: 'vn.nguonc.movies.v17',
+    version: '17.0.0',
     name: 'Nguồn C',
     description: 'Kho phim Bộ, Phim Lẻ, Hoạt Hình Vietsub chất lượng cao',
     resources: ['catalog', 'meta', 'stream'],
@@ -125,7 +125,7 @@ app.get('/catalog/:type/:id*', async (req, res) => {
     }
 });
 
-// Meta Route - Xử lý dứt điểm lỗi lặp chữ "Tập"
+// Meta Route - Thêm thumbnail cho từng tập để không bị màn hình đen
 app.get('/meta/:type/:id*', async (req, res) => {
     try {
         let rawId = req.params.id + (req.params[0] || '');
@@ -137,7 +137,8 @@ app.get('/meta/:type/:id*', async (req, res) => {
 
         if (!movie) return res.json({ meta: null });
 
-        // Sử dụng dấu cách đặc biệt hoặc định dạng số thuần để Nuvio hiện chuẩn xác
+        const movieThumb = formatPoster(movie.thumb_url || movie.poster_url);
+
         const videos = rawEpisodes.map((ep, idx) => {
             let epNum = idx + 1;
             if (ep.name) {
@@ -146,7 +147,8 @@ app.get('/meta/:type/:id*', async (req, res) => {
             }
             return {
                 id: `phim_${movie.slug}:${idx + 1}`,
-                title: `Phần 1 - Tập ${epNum}`,
+                title: String(epNum),
+                thumbnail: movieThumb, // Gán ảnh phim cho tập để hiển thị bắt mắt thay vì màu đen
                 released: new Date().toISOString(),
                 season: 1,
                 episode: epNum
@@ -159,7 +161,7 @@ app.get('/meta/:type/:id*', async (req, res) => {
                 type: req.params.type,
                 name: movie.name,
                 poster: formatPoster(movie.poster_url || movie.thumb_url),
-                background: formatPoster(movie.thumb_url || movie.poster_url),
+                background: movieThumb,
                 description: movie.content ? movie.content.replace(/<[^>]*>?/gm, '') : '',
                 year: String(movie.year || '2026'),
                 releaseInfo: `${movie.year || '2026'} • ${movie.episode_current || 'Full'}`,
@@ -204,3 +206,4 @@ app.get('/stream/:type/:id*', async (req, res) => {
 });
 
 module.exports = app;
+    
