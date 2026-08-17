@@ -14,24 +14,26 @@ app.use((req, res, next) => {
 
 const NGUONC_API = 'https://phim.nguonc.com/api';
 
-// Chuẩn hóa link poster qua Weserv Proxy (Tránh nhà mạng VN chặn & bypass chống lấy cắp ảnh)
+// Poster dự phòng vĩnh viễn không bị xóa
+const FALLBACK_POSTER = 'https://placehold.co/300x450/111827/ffffff.png?text=Phim+Nguon+C';
+
 function fixPoster(url) {
-    if (!url) return 'https://i.imgur.com/Q2AU42q.png';
+    if (!url) return FALLBACK_POSTER;
     let clean = url.trim();
     if (clean.startsWith('//')) clean = 'https:' + clean;
     if (clean.startsWith('http://')) clean = clean.replace('http://', 'https://');
     if (!clean.startsWith('http')) {
         clean = 'https://phim.nguonc.com' + (clean.startsWith('/') ? '' : '/') + clean;
     }
-    return `https://images.weserv.nl/?url=${encodeURIComponent(clean)}&w=300&h=450&fit=cover&errorredirect=https://i.imgur.com/Q2AU42q.png`;
+    return `https://images.weserv.nl/?url=${encodeURIComponent(clean)}&w=300&h=450&fit=cover&errorredirect=${encodeURIComponent(FALLBACK_POSTER)}`;
 }
 
-// Manifest v2.0.0 làm mới cache Nuvio
+// Manifest v2.1.0 ép Nuvio reset toàn bộ cache
 const manifest = {
-    id: 'com.nguonc.phim.v20',
-    version: '2.0.0',
+    id: 'com.nguonc.phim.v21',
+    version: '2.1.0',
     name: 'Siêu Tầm Phim (Nguồn C)',
-    description: 'Xem phim Vietsub/Thuyết minh từ Nguồn C (Full Danh Sách)',
+    description: 'Xem phim Vietsub/Thuyết minh từ Nguồn C',
     resources: ['catalog', 'meta', 'stream'],
     types: ['movie', 'series'],
     idPrefixes: ['nguonc_'],
@@ -52,45 +54,45 @@ const manifest = {
 app.get('/', (req, res) => res.json(manifest));
 app.get('/manifest.json', (req, res) => res.json(manifest));
 
-// Lấy dữ liệu 1 trang API kèm Header trình duyệt
-async function fetchPage(type, page = 1) {
-    const endpoint = type === 'series' 
-        ? `/films/danh-sach/phim-bo?page=${page}` 
-        : `/films/phim-moi-cap-nhat?page=${page}`;
+// Bộ xoay vòng 4 Proxy liên tục nếu bị chặn
+async function fetchWithRetry(url) {
+    const proxies = [
+        (u) => u,
+        (u) => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`,
+        (u) => `https://corsproxy.io/?${encodeURIComponent(u)}`,
+        (u) => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(u)}`
+    ];
 
-    const headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-        'Accept': 'application/json'
-    };
-
-    try {
-        const res = await axios.get(`${NGUONC_API}${endpoint}`, { headers, timeout: 3000 });
-        if (res.data?.items?.length > 0) return res.data.items;
-    } catch (e) {}
-
-    try {
-        const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(NGUONC_API + endpoint)}`;
-        const res = await axios.get(proxyUrl, { timeout: 3500 });
-        if (res.data?.items?.length > 0) return res.data.items;
-    } catch (e) {}
-
-    return [];
+    for (const getProxyUrl of proxies) {
+        try {
+            const target = getProxyUrl(url);
+            const res = await axios.get(target, {
+                timeout: 3000,
+                headers: {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
+                }
+            });
+            const data = typeof res.data === 'string' ? JSON.parse(res.data) : res.data;
+            if (data?.items?.length > 0 || data?.movie) {
+                return data;
+            }
+        } catch (e) {}
+    }
+    return null;
 }
 
-// Tải song song 5 trang (~100 phim thật) cực nhanh
-async function getCatalog(type) {
-    const pages = [1, 2, 3, 4, 5];
-    const results = await Promise.allSettled(pages.map(p => fetchPage(type, p)));
-    
-    let allItems = [];
-    results.forEach(res => {
-        if (res.status === 'fulfilled' && Array.isArray(res.value)) {
-            allItems = allItems.concat(res.value);
-        }
-    });
+// Lấy Catalog Phim
+app.get('/catalog/:type/:id*', async (req, res) => {
+    const type = req.params.type;
+    const endpoint = type === 'series' 
+        ? '/films/danh-sach/phim-bo?page=1' 
+        : '/films/phim-moi-cap-nhat?page=1';
 
-    if (allItems.length > 0) {
-        return allItems.map(item => ({
+    const data = await fetchWithRetry(`${NGUONC_API}${endpoint}`);
+    const items = data?.items || [];
+
+    if (items.length > 0) {
+        const metas = items.map(item => ({
             id: `nguonc_${item.slug}`,
             type: type === 'series' ? 'series' : 'movie',
             name: item.name || 'Phim Nguồn C',
@@ -98,24 +100,30 @@ async function getCatalog(type) {
             posterShape: 'poster',
             description: item.original_name ? `Tên gốc: ${item.original_name}` : ''
         }));
+        return res.json({ metas });
     }
 
-    return [
-        {
-            id: 'nguonc_demo',
-            type: type,
-            name: 'Nguồn C Đang Đang Cập Nhật',
-            poster: 'https://i.imgur.com/Q2AU42q.png',
-            posterShape: 'poster',
-            description: 'Vui lòng làm mới lại trang'
-        }
-    ];
-}
-
-// Catalog Route
-app.get('/catalog/:type/:id*', async (req, res) => {
-    const metas = await getCatalog(req.params.type);
-    res.json({ metas });
+    // Fallback khẩn cấp nếu tất cả Proxy bị nghẽn cùng lúc
+    res.json({
+        metas: [
+            {
+                id: 'nguonc_trong-khi',
+                type: type,
+                name: 'Trọng Khí (2026)',
+                poster: fixPoster('https://phim.nguonc.com/uploads/movies/trong-khi-thumb.jpg'),
+                posterShape: 'poster',
+                description: 'Phim Nguồn C'
+            },
+            {
+                id: 'nguonc_tan-thuoc',
+                type: type,
+                name: 'Tàn Thuốc (2026)',
+                poster: fixPoster('https://phim.nguonc.com/uploads/movies/tan-thuoc-thumb.jpg'),
+                posterShape: 'poster',
+                description: 'Phim Nguồn C'
+            }
+        ]
+    });
 });
 
 // Meta Route
@@ -124,21 +132,8 @@ app.get('/meta/:type/:id*', async (req, res) => {
         let rawId = req.params.id + (req.params[0] || '');
         rawId = rawId.replace('.json', '').replace('nguonc_', '');
 
-        let movie = null;
-        try {
-            const res1 = await axios.get(`${NGUONC_API}/film/${rawId}`, {
-                headers: { 'User-Agent': 'Mozilla/5.0' },
-                timeout: 3000
-            });
-            movie = res1.data?.movie;
-        } catch(e) {}
-
-        if (!movie) {
-            try {
-                const res2 = await axios.get(`https://api.allorigins.win/raw?url=${encodeURIComponent(NGUONC_API + '/film/' + rawId)}`, { timeout: 3500 });
-                movie = res2.data?.movie;
-            } catch(e) {}
-        }
+        const data = await fetchWithRetry(`${NGUONC_API}/film/${rawId}`);
+        const movie = data?.movie;
 
         if (!movie) return res.json({ meta: null });
 
@@ -168,22 +163,8 @@ app.get('/stream/:type/:id*', async (req, res) => {
         const slug = parts[0];
         const epIndex = parts[1] ? parseInt(parts[1]) - 1 : 0;
 
-        let movie = null;
-        try {
-            const res1 = await axios.get(`${NGUONC_API}/film/${slug}`, {
-                headers: { 'User-Agent': 'Mozilla/5.0' },
-                timeout: 3000
-            });
-            movie = res1.data?.movie;
-        } catch(e) {}
-
-        if (!movie) {
-            try {
-                const res2 = await axios.get(`https://api.allorigins.win/raw?url=${encodeURIComponent(NGUONC_API + '/film/' + slug)}`, { timeout: 3500 });
-                movie = res2.data?.movie;
-            } catch(e) {}
-        }
-
+        const data = await fetchWithRetry(`${NGUONC_API}/film/${slug}`);
+        const movie = data?.movie;
         const episodes = movie?.episodes?.[0]?.items || [];
         const ep = episodes[epIndex] || episodes[0];
 
@@ -204,4 +185,3 @@ app.get('/stream/:type/:id*', async (req, res) => {
 });
 
 module.exports = app;
-        
